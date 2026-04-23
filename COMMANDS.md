@@ -138,7 +138,32 @@ ros2 launch tb4_square square_driver.launch.py \
   pause_time:=0.3
 ```
 
-## 14. PC側: RViz 表示用のトピックを確認する
+## 14. PC側: キーボードで実機を操作する
+
+まず `teleop_twist_keyboard` が入っていない場合はインストールします。
+
+```bash
+sudo apt install ros-humble-teleop-twist-keyboard
+```
+
+実機をキーボードで動かすときは次を使います。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/robot2/cmd_vel
+```
+
+よく使うキー:
+
+- `i`: 前進
+- `,`: 後退
+- `j`: 左回転
+- `l`: 右回転
+- `k`: 停止
+
+## 15. PC側: RViz 表示用のトピックを確認する
 
 ```bash
 ros2 topic echo /robot2/robot_description --once
@@ -148,7 +173,7 @@ ros2 topic echo /robot2/odom --once
 ros2 topic echo /robot2/scan --once
 ```
 
-## 15. このプロジェクトでよく使うトピック
+## 16. このプロジェクトでよく使うトピック
 
 - `/robot2/cmd_vel`
   実機へ速度指令を送るトピック
@@ -165,7 +190,7 @@ ros2 topic echo /robot2/scan --once
 - `/robot2/path`
   `RViz` で軌跡を線として表示するためのトピック
 
-## 16. 実際によく使う流れ
+## 17. 実際によく使う流れ
 
 ### 1. 実機側で実行
 
@@ -201,7 +226,13 @@ ros2 launch tb4_square robot2_rviz.launch.py
 ros2 launch tb4_square square_driver.launch.py cmd_vel_topic:=/robot2/cmd_vel
 ```
 
-## 17. よくある確認コマンド
+### 5. 別の PC 側ターミナルでキーボード操作する場合
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/robot2/cmd_vel
+```
+
+## 18. よくある確認コマンド
 
 ### 実機側で Discovery Server の設定を確認
 
@@ -251,11 +282,11 @@ ros2 topic echo /robot2/tf --once
 ros2 topic echo /robot2/tf_static --once
 ```
 
-## 18. ノードや launch を止める
+## 19. ノードや launch を止める
 
 `ros2 launch` や `ros2 run` を実行したターミナルで `Ctrl+C` を押します。
 
-## 19. Remote-SSH 関連でよく使うコマンド
+## 20. Remote-SSH 関連でよく使うコマンド
 
 ### PC側: 実機にログインする
 
@@ -275,3 +306,56 @@ ssh -X ubuntu@192.168.11.22
 ping 192.168.11.22
 ssh ubuntu@192.168.11.22
 ```
+
+## 21. GitHub への push が重いとき
+
+このワークスペースでは、`build/`、`install/`、`log/`、`.vscode/` のような自動生成ファイルは Git に入れないのが基本です。  
+すでに `.gitignore` は追加してあるので、次は「今 Git 管理に入ってしまっている生成物を外す」作業をします。
+
+### まず今後の生成物を無視する
+
+`.gitignore` に次のような設定を入れています。
+
+- `build/`
+- `install/`
+- `log/`
+- `.vscode/`
+- `__pycache__/`
+
+### すでに Git 管理に入っている生成物を index から外す
+
+以下のコマンドは、ローカルのファイル自体は消さずに、Git の管理対象からだけ外します。
+
+```bash
+cd ~/turtlebot4_ws
+git rm -r --cached .vscode build install log
+git add .gitignore
+git status
+git commit -m "Remove generated files from git tracking"
+```
+
+### そのあと push する
+
+```bash
+git push origin main
+```
+
+### それでも重い場合
+
+過去のコミット履歴に大きいファイルが残っている可能性があります。  
+特に `.vscode/browse.vc.db` のような大きいファイルが履歴にあると、push や clone が重いままです。
+
+この場合は `git filter-repo` などを使って履歴を書き換える必要があります。  
+ただしこれは影響が大きいので、実行前にバックアップや共同作業者への共有が必要です。
+
+履歴から巨大ファイルを消す例:
+
+```bash
+git filter-repo --path .vscode/browse.vc.db --invert-paths
+git push origin --force
+```
+
+注意:
+
+- `git push --force` は共同作業中のリポジトリでは要注意
+- 履歴を書き換える前に `git clone --mirror` などでバックアップを取るのがおすすめ
