@@ -1,0 +1,4 @@
+[console_scripts]
+odom_path_publisher = tb4_square.odom_path_publisher:main
+square_driver = tb4_square.square_driver:main
+
