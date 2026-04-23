@@ -1,0 +1,16 @@
+# ROS 2 / colcon build artifacts
+build/
+install/
+log/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# VS Code workspace artifacts
+.vscode/
+
+# OS / editor noise
+.DS_Store
+*.swp
+*.swo
