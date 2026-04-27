@@ -11,6 +11,7 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
+        ("share/" + package_name + "/gui", glob("gui/*.config")),
         ("share/" + package_name + "/rviz", glob("rviz/*.rviz")),
     ],
     install_requires=["setuptools"],
@@ -22,8 +23,10 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
+            "odom_tf_publisher = tb4_square.odom_tf_publisher:main",
             "odom_path_publisher = tb4_square.odom_path_publisher:main",
             "square_driver = tb4_square.square_driver:main",
+            "wheel_tf_publisher = tb4_square.wheel_tf_publisher:main",
         ],
     },
 )

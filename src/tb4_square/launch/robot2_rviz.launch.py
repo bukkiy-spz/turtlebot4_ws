@@ -28,6 +28,40 @@ def generate_launch_description() -> LaunchDescription:
                 ],
             ),
             Node(
+                package="tb4_square",
+                executable="odom_tf_publisher",
+                name="robot2_odom_tf_publisher",
+                output="screen",
+                parameters=[
+                    {
+                        "odom_topic": "/robot2/odom",
+                        "parent_frame": "odom",
+                        "child_frame": "base_link",
+                        "publish_rate": 20.0,
+                        "stale_after_sec": 1.0,
+                    }
+                ],
+                remappings=[
+                    ("/tf", "/robot2/tf"),
+                ],
+            ),
+            Node(
+                package="tb4_square",
+                executable="wheel_tf_publisher",
+                name="robot2_wheel_tf_publisher",
+                output="screen",
+                parameters=[
+                    {
+                        "joint_states_topic": "/robot2/joint_states",
+                        "base_frame": "base_link",
+                        "publish_rate": 20.0,
+                    }
+                ],
+                remappings=[
+                    ("/tf", "/robot2/tf"),
+                ],
+            ),
+            Node(
                 package="rviz2",
                 executable="rviz2",
                 name="robot2_rviz",
