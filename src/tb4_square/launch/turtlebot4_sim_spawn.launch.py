@@ -1,6 +1,4 @@
-import os
-
-from pathlib import Path
+"""Ignition 上に TurtleBot4 を出現させ、ROS 側の関連ノード群も起動する。"""
 
 from ament_index_python.packages import get_package_share_directory
 
@@ -10,12 +8,9 @@ from irobot_create_common_bringup.offset import OffsetParser, RotationalOffsetX,
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 from launch_ros.actions import Node, PushRosNamespace
-
-import tempfile
-import os
 
 
 ARGUMENTS = [
@@ -54,6 +49,8 @@ for pose_element in ["x", "y", "z", "yaw"]:
 
 
 def generate_launch_description():
+    # ロボット記述、bridge、Create 3 関連ノードの launch を参照するためのパス群。
+    # 既存 launch を別のものへ差し替えたい場合は、ここが変更点になる。
     pkg_turtlebot4_ignition_bringup = get_package_share_directory(
         "turtlebot4_ignition_bringup"
     )
@@ -64,10 +61,6 @@ def generate_launch_description():
     pkg_irobot_create_ignition_bringup = get_package_share_directory(
         "irobot_create_ignition_bringup"
     )
-    pkg_irobot_create_description = get_package_share_directory(
-        "irobot_create_description"
-    )
-
     turtlebot4_ros_ign_bridge_launch = PathJoinSubstitution(
         [pkg_turtlebot4_ignition_bringup, "launch", "ros_ign_bridge.launch.py"]
     )
@@ -95,6 +88,8 @@ def generate_launch_description():
         description="TurtleBot4 node parameter file",
     )
 
+    # 起動引数をいったん LaunchConfiguration として束ねる。
+    # x / y / z / yaw を変えると初期出現位置と向きが変わる。
     namespace = LaunchConfiguration("namespace")
     use_sim_time = LaunchConfiguration("use_sim_time")
     world = LaunchConfiguration("world")
@@ -107,6 +102,8 @@ def generate_launch_description():
     robot_name = GetNamespacedName(namespace, "turtlebot4")
     dock_name = GetNamespacedName(namespace, "standard_dock")
 
+    # dock はロボットの近くに出したいので、robot 側の姿勢から相対計算している。
+    # 数値を変えると dock と robot の初期距離や向きの関係が変わる。
     dock_offset_x = RotationalOffsetX(0.157, yaw)
     dock_offset_y = RotationalOffsetY(0.157, yaw)
     x_dock = OffsetParser(x, dock_offset_x)
@@ -117,6 +114,8 @@ def generate_launch_description():
     spawn_robot_group_action = GroupAction(
         [
             PushRosNamespace(namespace),
+            # robot_description と基本 TF を出す。
+            # model を変えると標準機体と lite 機体が切り替わる。
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([robot_description_launch]),
                 launch_arguments=[
@@ -124,10 +123,14 @@ def generate_launch_description():
                     ("use_sim_time", use_sim_time),
                 ],
             ),
+            # dock の URDF 側 description を用意する。
+            # 別タイプの dock を使う場合はこの include 先や引数を見直す。
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([dock_description_launch]),
                 launch_arguments={"gazebo": "ignition"}.items(),
             ),
+            # robot_state_publisher が配信する robot_description topic を使って spawn する。
+            # -x/-y/-z/-Y を変えると、シミュレータ上の出現位置が変わる。
             Node(
                 package="ros_ign_gazebo",
                 executable="create",
@@ -137,29 +140,12 @@ def generate_launch_description():
                     "-y", y,
                     "-z", z_robot,
                     "-Y", yaw,
-                    "-param", "robot_description",
-                ],
-                parameters=[
-                    {
-                        "robot_description": Command(
-                            [
-                                "xacro ",
-                                PathJoinSubstitution(
-                                    [
-                                        pkg_turtlebot4_description,
-                                        "urdf",
-                                        LaunchConfiguration("model"),
-                                        "turtlebot4.urdf.xacro",
-                                    ]
-                                ),
-                                " gazebo:=ignition namespace:=",
-                                robot_name,
-                            ]
-                        )
-                    }
+                    "-topic", "robot_description",
                 ],
                 output="screen",
             ),
+            # dock_state_publisher 側の standard_dock_description topic から dock を spawn する。
+            # x_dock / y_dock / yaw_dock の計算を変えると dock の相対配置が変わる。
             Node(
                 package="ros_ign_gazebo",
                 executable="create",
@@ -174,28 +160,12 @@ def generate_launch_description():
                     z,
                     "-Y",
                     yaw_dock,
-                    "-param", "standard_dock_description",
-                ],
-                parameters=[
-                    {
-                        "standard_dock_description": Command(
-                            [
-                                "xacro ",
-                                PathJoinSubstitution(
-                                    [
-                                        pkg_irobot_create_description,
-                                        "urdf",
-                                        "dock",
-                                        "standard_dock.urdf.xacro",
-                                    ]
-                                ),
-                                " gazebo:=ignition",
-                            ]
-                        )
-                    }
+                    "-topic", "standard_dock_description",
                 ],
                 output="screen",
             ),
+            # LiDAR や camera など、シミュレータの topic を ROS 2 topic へ橋渡しする。
+            # センサ topic 名を変えたいときは、この include 先の bridge launch が主な編集点。
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([turtlebot4_ros_ign_bridge_launch]),
                 launch_arguments=[
@@ -206,6 +176,8 @@ def generate_launch_description():
                     ("world", world),
                 ],
             ),
+            # TurtleBot4 / Create 3 の ROS ノード群を起動する。
+            # param_file を差し替えると TurtleBot4 本体ノードの細かな設定を変えられる。
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource([turtlebot4_node_launch]),
                 launch_arguments=[
@@ -224,6 +196,8 @@ def generate_launch_description():
                     ("dock_name", dock_name),
                 ],
             ),
+            # RViz や一部センサ処理が期待する静的 TF を追加する。
+            # 親子フレーム名を変えると、LaserScan や PointCloud の見え方に直接影響する。
             Node(
                 name="rplidar_stf",
                 package="tf2_ros",
@@ -244,6 +218,8 @@ def generate_launch_description():
                     ("/tf_static", "tf_static"),
                 ],
             ),
+            # camera の optical frame を明示的に補う。
+            # 回転値を変えると、画像や点群の向きが RViz 上でずれて見える。
             Node(
                 name="camera_stf",
                 package="tf2_ros",
@@ -267,6 +243,8 @@ def generate_launch_description():
         ]
     )
 
+    # 起動引数と実際の action 群をまとめて返す。
+    # 新しい spawn 処理や補助ノードを足すなら、この GroupAction か add_action が追加先。
     ld = LaunchDescription(ARGUMENTS)
     ld.add_action(param_file_cmd)
     ld.add_action(spawn_robot_group_action)

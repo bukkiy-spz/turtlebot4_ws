@@ -1,3 +1,5 @@
+"""tb4_square パッケージのインストール設定と実行入口定義。"""
+
 from setuptools import setup
 from glob import glob
 
@@ -8,6 +10,8 @@ setup(
     version="0.0.1",
     packages=[package_name],
     data_files=[
+        # colcon build 後に launch / RViz / GUI 設定を share 以下へ入れる。
+        # 追加した設定ファイルを配布対象にしたいときは、この一覧へ足す。
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
@@ -22,6 +26,8 @@ setup(
     license="Apache-2.0",
     tests_require=["pytest"],
     entry_points={
+        # ここで定義した名前が ros2 run で呼べる executable 名になる。
+        # 新しい Python ノードを追加したら、この一覧に追記するのが基本。
         "console_scripts": [
             "odom_tf_publisher = tb4_square.odom_tf_publisher:main",
             "odom_path_publisher = tb4_square.odom_path_publisher:main",

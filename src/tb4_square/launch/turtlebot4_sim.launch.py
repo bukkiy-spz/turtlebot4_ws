@@ -1,7 +1,13 @@
+"""TurtleBot4 シミュレーション全体をまとめて起動する最上位 launch。"""
+
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    UnsetEnvironmentVariable,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -68,6 +74,8 @@ for pose_element in ["x", "y", "z", "yaw"]:
 
 
 def generate_launch_description():
+    # 参照するパッケージの共有ディレクトリをここで解決する。
+    # どの launch や設定ファイルを使うか差し替えたい場合は、この近辺のパス指定を触る。
     pkg_turtlebot4_ignition_bringup = get_package_share_directory(
         "turtlebot4_ignition_bringup"
     )
@@ -106,6 +114,8 @@ def generate_launch_description():
         [pkg_turtlebot4_navigation, "config", "slam.yaml"]
     )
 
+    # map / *_params の既定値を変えると、起動時に使う地図やパラメータファイルが変わる。
+    # 研究用に別設定を試すときはここを入口にすると分かりやすい。
     extra_arguments = [
         DeclareLaunchArgument(
             "map",
@@ -129,6 +139,17 @@ def generate_launch_description():
         ),
     ]
 
+    # 実機接続用に ROS_DISCOVERY_SERVER を設定したシェルから起動しても、
+    # Gazebo 内のローカルノード同士は直接 discovery できる状態に戻す。
+    # ここを外すと create ノードが robot_description を見つけられず、
+    # ロボットや dock がいつまでも spawn されないことがある。
+    local_sim_env = [
+        UnsetEnvironmentVariable("ROS_DISCOVERY_SERVER"),
+        UnsetEnvironmentVariable("ROS_STATIC_PEERS"),
+    ]
+
+    # シミュレータ本体とロボット spawn は別 launch に分離している。
+    # world を変えると読み込む環境が変わり、model を変えると standard / lite が切り替わる。
     ignition = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ignition_launch]),
         launch_arguments=[
@@ -152,6 +173,8 @@ def generate_launch_description():
         ],
     )
 
+    # localization / slam / nav2 を true にしたときだけ対応ノード群を追加起動する。
+    # 「ただ表示だけしたい」「SLAM も回したい」といった切り替えはこの3つが入口。
     localization = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([localization_launch]),
         launch_arguments=[
@@ -183,6 +206,8 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("nav2")),
     )
 
+    # RViz もシミュレータと同じ時計・同じ TF を見る。
+    # rviz_config を変えると表示するセンサや固定フレームの初期値を変えられる。
     rviz = Node(
         package="rviz2",
         executable="rviz2",
@@ -197,9 +222,13 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("rviz")),
     )
 
+    # 最終的な起動順をここで組み立てる。
+    # 新しい補助ノードを足すなら、この末尾付近に add_action を追加するのが基本。
     ld = LaunchDescription(ARGUMENTS)
     for argument in extra_arguments:
         ld.add_action(argument)
+    for action in local_sim_env:
+        ld.add_action(action)
     ld.add_action(ignition)
     ld.add_action(spawn)
     ld.add_action(localization)

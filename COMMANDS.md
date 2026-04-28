@@ -1,6 +1,6 @@
 # TurtleBot4 コマンドメモ
 
-このファイルは、`TurtleBot4` 実機を `Remote-SSH` と `RViz` を使って動かすときのメモです。  
+このファイルは、`TurtleBot4` 実機や `Gazebo / Ignition` シミュレーションを動かすときのメモです。  
 「どちらの端末で打つか」が分かるように、`PC側` と `実機側` を分けてあります。
 
 ## 0. まず確認すること
@@ -72,10 +72,11 @@ ros2 topic list | grep cmd_vel
 ros2 topic list | grep tf
 ```
 
-##　cmd_velがなければ再起動
-'''bash
+## `cmd_vel` がなければ再起動
+
+```bash
 sudo reboot
-'''
+```
 
 ## 7. PC側: ROS 通信設定を入れる
 
@@ -123,6 +124,93 @@ source /opt/ros/humble/setup.bash
 colcon build --packages-select tb4_square
 source install/setup.bash
 ```
+
+## 10-1. PC側: Gazebo シミュレーションを安全に起動する
+
+シミュレーションは、`build` と `source` をやり直してから起動したほうが、古い launch や古い Python コードを拾いにくくて安全です。  
+前のシミュレーションが起動したままなら、先にその端末で `Ctrl+C` して止めてから実行します。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select tb4_square
+source ~/turtlebot4_ws/install/setup.bash
+# 実機接続用の discovery 設定が残っていると Gazebo 内の spawn が止まるので解除する
+unset ROS_DISCOVERY_SERVER
+ros2 daemon stop
+ros2 launch tb4_square turtlebot4_sim.launch.py
+```
+
+ログだけ見たいときは、`RViz` を切って起動してもよいです。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source ~/turtlebot4_ws/install/setup.bash
+ros2 daemon stop
+ros2 launch tb4_square turtlebot4_sim.launch.py rviz:=false
+```
+
+## 10-2. PC側: 倉庫だけ見えてロボットが出ないときの確認
+
+倉庫環境だけ表示されてロボットが見えないときは、`robot_description` や `robot_state_publisher` が正しく立ち上がっているかを確認します。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source ~/turtlebot4_ws/install/setup.bash
+ros2 node list | grep robot_state_publisher
+ros2 topic list | grep robot_description
+ros2 service list | grep robot_state_publisher
+```
+
+特に次のどれかが出ないときは、いったん `Ctrl+C` で止めてから `10-1` の手順で再起動します。
+
+- `robot_state_publisher`
+- `robot_description`
+- `robot_state_publisher/get_parameters`
+
+## 10-3. PC側: Gazebo や controller の古いプロセスが残っていないか確認する
+
+Teleop が効かない、ロボット表示が崩れる、`/controller_manager` や `/gz_ros2_control` が重複する、といったときは、前回のシミュレーションが裏で残っていることがあります。  
+まずは「何が残っているか」を確認します。
+
+```bash
+ps -ef | rg "ign gazebo|ros2 launch tb4_square turtlebot4_sim.launch.py|controller_manager|gz_ros2_control"
+```
+
+ROS グラフ上で同名ノードが重複していないかも見ておくと切り分けが早いです。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source ~/turtlebot4_ws/install/setup.bash
+unset ROS_DISCOVERY_SERVER
+ros2 node list | sort | uniq -c | sort -nr | head -n 20
+```
+
+特に `2 /controller_manager` や `2 /gz_ros2_control` のように同じ名前が複数出るときは、古いシミュレーションが残っている可能性が高いです。
+
+まずは、シミュレーションを起動した端末で `Ctrl+C` を押して止めます。  
+それでも残る場合は、次のように `SIGINT` でやさしく止めます。
+
+```bash
+pkill -INT -f "ros2 launch tb4_square turtlebot4_sim.launch.py" || true
+pkill -INT -f "ign gazebo" || true
+sleep 2
+ps -ef | rg "ign gazebo|controller_manager|gz_ros2_control"
+```
+
+それでも残る場合だけ、`TERM` で終了させます。
+
+```bash
+pkill -TERM -f "ros2 launch tb4_square turtlebot4_sim.launch.py" || true
+pkill -TERM -f "ign gazebo" || true
+sleep 2
+ros2 daemon stop
+```
+
+止め終わったら、改めて `10-1` の手順でシミュレーションを 1 回だけ起動します。
 
 ## 11. PC側: RViz を起動する
 

@@ -1,3 +1,5 @@
+"""JointState から車輪まわりの TF を再構成して配信するノード。"""
+
 import math
 from typing import Dict
 
@@ -13,6 +15,8 @@ from tf2_ros import TransformBroadcaster
 
 
 def quaternion_from_rpy(roll: float, pitch: float, yaw: float):
+    """roll, pitch, yaw を quaternion に変換する補助関数。"""
+
     cr = math.cos(roll * 0.5)
     sr = math.sin(roll * 0.5)
     cp = math.cos(pitch * 0.5)
@@ -29,8 +33,13 @@ def quaternion_from_rpy(roll: float, pitch: float, yaw: float):
 
 
 class WheelTfPublisher(Node):
+    """最新 JointState をもとに左右車輪の TF 木を作り直す。"""
+
     def __init__(self) -> None:
         super().__init__("wheel_tf_publisher")
+        # joint_states_topic を変えると参照する関節角の入力先が変わる。
+        # base_frame を変えると、生成される車輪 TF の親フレームが変わる。
+        # publish_rate を上げると見た目は細かくなるが、TF 配信量は増える。
         self.declare_parameter("joint_states_topic", "/robot2/joint_states")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("publish_rate", 20.0)
@@ -65,6 +74,8 @@ class WheelTfPublisher(Node):
         )
 
     def joint_state_callback(self, msg: JointState) -> None:
+        # 関節名ごとの現在角度を辞書へ入れておく。
+        # どの joint 名を使うかは、下の make_*_transform 呼び出し側で決まる。
         self.latest_joint_state_time = self.get_clock().now()
         self._missing_joint_state_warned = False
         for name, position in zip(msg.name, msg.position):
@@ -73,6 +84,8 @@ class WheelTfPublisher(Node):
     def publish_transforms(self) -> None:
         stamp = self.get_clock().now().to_msg()
         self.maybe_warn_about_missing_joint_states()
+        # 左右の wheel_drop と wheel を base_link 配下の小さな TF 木として publish する。
+        # ここにフレームを足せば、追加関節の可視化も同じ流れで拡張できる。
         transforms = [
             self.make_wheel_drop_transform(
                 stamp,
@@ -102,6 +115,8 @@ class WheelTfPublisher(Node):
         self.broadcaster.sendTransform(transforms)
 
     def maybe_warn_about_missing_joint_states(self) -> None:
+        # 起動直後や入力停止時の警告を 1 回だけ出す。
+        # warn_if_joint_states_missing_sec を短くすると、異常検知は早くなる。
         if self.warn_if_joint_states_missing_sec == 0:
             return
 
@@ -125,6 +140,8 @@ class WheelTfPublisher(Node):
     def make_wheel_drop_transform(
         self, stamp, child_frame: str, y: float, drop_joint: str
     ) -> TransformStamped:
+        # wheel_drop_* は、車輪本体より手前の「上下位置を持つ中間フレーム」。
+        # y や z の計算を変えると、RViz 上で見える車輪位置が変わる。
         transform = TransformStamped()
         transform.header.stamp = stamp
         transform.header.frame_id = self.base_frame
@@ -144,6 +161,8 @@ class WheelTfPublisher(Node):
     def make_wheel_transform(
         self, stamp, parent_frame: str, child_frame: str, wheel_joint: str
     ) -> TransformStamped:
+        # left_wheel / right_wheel は簡略モデルとして yaw 回転だけを反映している。
+        # もし実機モデルに合わせて回転軸を変えたいなら、この quaternion 計算が編集点。
         transform = TransformStamped()
         transform.header.stamp = stamp
         transform.header.frame_id = parent_frame

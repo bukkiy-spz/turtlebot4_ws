@@ -1,3 +1,5 @@
+"""一定時間ごとの速度指令でロボットを正方形に走らせるノード。"""
+
 import math
 import time
 
@@ -11,8 +13,14 @@ from rclpy.qos import ReliabilityPolicy
 
 
 class SquareDriver(Node):
+    """直進と左旋回を交互に出して正方形軌道を作る cmd_vel 発行ノード。"""
+
     def __init__(self) -> None:
         super().__init__("square_driver")
+        # ここで宣言する値が、launch から調整できる入口になる。
+        # side_length を変えると一辺の長さが変わり、
+        # linear_speed / angular_speed を変えると所要時間と動きの速さが変わる。
+        # use_stamped を true にすると TwistStamped を publish する。
         self.declare_parameter("cmd_vel_topic", "cmd_vel")
         self.declare_parameter("use_stamped", False)
         self.declare_parameter("side_length", 0.4)
@@ -37,10 +45,14 @@ class SquareDriver(Node):
         msg_type = TwistStamped if self.use_stamped else Twist
         qos_profile = self._make_qos_profile()
         self.publisher = self.create_publisher(msg_type, self.cmd_vel_topic, qos_profile)
+        # 「何 m 進むか」「何度回るか」を、publish を続ける時間へ変換している。
+        # 直進時間や旋回時間の決まり方を変えたいなら、この2式が編集点。
         self.forward_time = self.side_length / self.linear_speed
         self.turn_time = (math.pi / 2.0) / self.angular_speed
 
     def _make_qos_profile(self) -> QoSProfile:
+        # 通信品質の切り替え。
+        # best_effort は軽いが取りこぼしやすく、reliable は確実だが環境によっては重い。
         if self.reliability == "best_effort":
             reliability = ReliabilityPolicy.BEST_EFFORT
         elif self.reliability == "reliable":
@@ -63,6 +75,8 @@ class SquareDriver(Node):
             raise ValueError("wait_for_subscriber_sec must be >= 0.0")
 
     def _make_command(self, linear_x: float, angular_z: float):
+        # 受け手が Twist か TwistStamped かに応じてメッセージ型を切り替える。
+        # 「時刻付き cmd_vel が必要な系かどうか」は use_stamped で決まる。
         if self.use_stamped:
             msg = TwistStamped()
             msg.header.stamp = self.get_clock().now().to_msg()
@@ -88,6 +102,9 @@ class SquareDriver(Node):
         if self.wait_for_subscriber_sec == 0.0:
             return True
 
+        # 受信側が現れるまで少し待つ。
+        # wait_for_subscriber_sec を長くすると安全に開始しやすいが、起動待ちは長くなる。
+        # require_subscriber=false にすると、相手がいなくてもそのまま走行を開始する。
         deadline = time.monotonic() + self.wait_for_subscriber_sec
         while rclpy.ok() and time.monotonic() < deadline:
             rclpy.spin_once(self, timeout_sec=0.1)
@@ -116,6 +133,8 @@ class SquareDriver(Node):
         return False
 
     def publish_for_duration(self, linear_x: float, angular_z: float, duration: float) -> None:
+        # 指定時間だけ一定の速度指令を流し続ける。
+        # publish 周期を細かくしたい場合は sleep 時間を短くするが、CPU 使用率は上がる。
         end_time = time.monotonic() + duration
         while rclpy.ok() and time.monotonic() < end_time:
             msg = self._make_command(linear_x, angular_z)
@@ -129,6 +148,8 @@ class SquareDriver(Node):
         time.sleep(self.pause_time)
 
     def run(self) -> None:
+        # 正方形 1 周分のメイン手順。
+        # 「四角形ではなく別の図形にしたい」場合は、このループ回数や直進・旋回順序が編集点。
         self.get_logger().info(
             f"Starting square motion on '{self.cmd_vel_topic}': "
             f"use_stamped={self.use_stamped}, "

@@ -1,3 +1,5 @@
+"""四角形走行デモ用ノードを起動する launch ファイル。"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -7,6 +9,9 @@ from launch_ros.actions import Node
 def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
+            # ここで default_value を変えると、起動時の既定挙動が変わる。
+            # たとえば side_length を大きくすると走る正方形が大きくなり、
+            # linear_speed / angular_speed を変えると直進や旋回の速さが変わる。
             DeclareLaunchArgument("namespace", default_value=""),
             DeclareLaunchArgument("cmd_vel_topic", default_value="cmd_vel"),
             DeclareLaunchArgument("use_stamped", default_value="false"),
@@ -17,6 +22,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("wait_for_subscriber_sec", default_value="8.0"),
             DeclareLaunchArgument("require_subscriber", default_value="true"),
             DeclareLaunchArgument("reliability", default_value="reliable"),
+            # 実際に cmd_vel を出すノード本体。
+            # launch 引数をここへ流し込むことで、コマンドを出す相手の topic や
+            # 速度プロファイルを外から切り替えられるようにしている。
             Node(
                 package="tb4_square",
                 executable="square_driver",
