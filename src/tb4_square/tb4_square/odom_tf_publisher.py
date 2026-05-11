@@ -36,6 +36,7 @@ class OdomTfPublisher(Node):
 
         self.latest_pose = None
         self.latest_odom_time = None
+        self.latest_odom_stamp = None
         self.warned_missing = False
         self.warned_stale = False
 
@@ -55,29 +56,34 @@ class OdomTfPublisher(Node):
         # TF では最新姿勢が重要なので、ここでは直近 1 件だけを保持する。
         self.latest_pose = msg.pose.pose
         self.latest_odom_time = self.get_clock().now()
+        self.latest_odom_stamp = msg.header.stamp
         self.warned_missing = False
         self.warned_stale = False
 
     def publish_transform(self) -> None:
-        # TF の時刻にはノードの clock を使う。
-        # use_sim_time=true なら /clock と同期し、RViz でも同じ時間軸で見える。
         transform = TransformStamped()
-        transform.header.stamp = self.get_clock().now().to_msg()
         transform.header.frame_id = self.parent_frame
         transform.child_frame_id = self.child_frame
 
         pose = self.latest_pose
         if pose is None:
+            # 入力が来る前は現在時刻の単位変換を出し、TF 木の全崩れを防ぐ。
+            # オドメトリ受信後は、実機側メッセージの stamp を優先して
+            # scan/odom/TF の時刻基準をそろえる。
+            transform.header.stamp = self.get_clock().now().to_msg()
             if not self.warned_missing:
                 self.get_logger().warn(
                     "No odometry received yet; publishing identity odom TF for RViz stability."
                 )
                 self.warned_missing = True
-            # オドメトリ未到着のあいだは単位変換を出して、TF 木の全崩れを防ぐ。
-            # ここをやめると、起動直後の RViz で fixed frame 解決に失敗しやすくなる。
             transform.transform.rotation.w = 1.0
             self.broadcaster.sendTransform(transform)
             return
+
+        if self.latest_odom_stamp is not None:
+            transform.header.stamp = self.latest_odom_stamp
+        else:
+            transform.header.stamp = self.get_clock().now().to_msg()
 
         if self.latest_odom_time is not None and self.stale_after_sec > 0.0:
             age = (self.get_clock().now() - self.latest_odom_time).nanoseconds / 1e9

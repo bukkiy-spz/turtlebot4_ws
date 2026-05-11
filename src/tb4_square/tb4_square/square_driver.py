@@ -1,4 +1,4 @@
-"""一定時間ごとの速度指令でロボットを正方形に走らせるノード。"""
+"""一定時間ごとの速度指令または Create3 action で正方形走行するノード。"""
 
 import math
 import time
@@ -6,22 +6,26 @@ import time
 import rclpy
 from geometry_msgs.msg import Twist
 from geometry_msgs.msg import TwistStamped
-from rclpy.topic_endpoint_info import TopicEndpointInfo
+from irobot_create_msgs.action import DriveDistance
+from irobot_create_msgs.action import RotateAngle
+from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
+from rclpy.topic_endpoint_info import TopicEndpointInfo
 
 
 class SquareDriver(Node):
-    """直進と左旋回を交互に出して正方形軌道を作る cmd_vel 発行ノード。"""
+    """直進と左旋回を交互に出して正方形軌道を作るノード。"""
 
     def __init__(self) -> None:
         super().__init__("square_driver")
-        # ここで宣言する値が、launch から調整できる入口になる。
         # side_length を変えると一辺の長さが変わり、
         # linear_speed / angular_speed を変えると所要時間と動きの速さが変わる。
-        # use_stamped を true にすると TwistStamped を publish する。
+        # control_mode=cmd_vel は Twist 配信、control_mode=action は
+        # Create3 の drive_distance / rotate_angle action を使う。
         self.declare_parameter("cmd_vel_topic", "cmd_vel")
+        self.declare_parameter("control_mode", "cmd_vel")
         self.declare_parameter("use_stamped", False)
         self.declare_parameter("side_length", 0.4)
         self.declare_parameter("linear_speed", 0.10)
@@ -30,8 +34,12 @@ class SquareDriver(Node):
         self.declare_parameter("wait_for_subscriber_sec", 3.0)
         self.declare_parameter("require_subscriber", True)
         self.declare_parameter("reliability", "reliable")
+        self.declare_parameter("drive_distance_action_name", "/robot2/drive_distance")
+        self.declare_parameter("rotate_angle_action_name", "/robot2/rotate_angle")
+        self.declare_parameter("wait_for_action_server_sec", 8.0)
 
         self.cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
+        self.control_mode = str(self.get_parameter("control_mode").value).lower()
         self.use_stamped = bool(self.get_parameter("use_stamped").value)
         self.side_length = float(self.get_parameter("side_length").value)
         self.linear_speed = float(self.get_parameter("linear_speed").value)
@@ -40,19 +48,32 @@ class SquareDriver(Node):
         self.wait_for_subscriber_sec = float(self.get_parameter("wait_for_subscriber_sec").value)
         self.require_subscriber = bool(self.get_parameter("require_subscriber").value)
         self.reliability = str(self.get_parameter("reliability").value).lower()
+        self.drive_distance_action_name = str(
+            self.get_parameter("drive_distance_action_name").value
+        )
+        self.rotate_angle_action_name = str(
+            self.get_parameter("rotate_angle_action_name").value
+        )
+        self.wait_for_action_server_sec = float(
+            self.get_parameter("wait_for_action_server_sec").value
+        )
 
         self._validate_parameters()
+
         msg_type = TwistStamped if self.use_stamped else Twist
         qos_profile = self._make_qos_profile()
         self.publisher = self.create_publisher(msg_type, self.cmd_vel_topic, qos_profile)
-        # 「何 m 進むか」「何度回るか」を、publish を続ける時間へ変換している。
-        # 直進時間や旋回時間の決まり方を変えたいなら、この2式が編集点。
+        self.drive_distance_client = ActionClient(
+            self, DriveDistance, self.drive_distance_action_name
+        )
+        self.rotate_angle_client = ActionClient(
+            self, RotateAngle, self.rotate_angle_action_name
+        )
+
         self.forward_time = self.side_length / self.linear_speed
         self.turn_time = (math.pi / 2.0) / self.angular_speed
 
     def _make_qos_profile(self) -> QoSProfile:
-        # 通信品質の切り替え。
-        # best_effort は軽いが取りこぼしやすく、reliable は確実だが環境によっては重い。
         if self.reliability == "best_effort":
             reliability = ReliabilityPolicy.BEST_EFFORT
         elif self.reliability == "reliable":
@@ -63,6 +84,8 @@ class SquareDriver(Node):
         return QoSProfile(depth=10, reliability=reliability)
 
     def _validate_parameters(self) -> None:
+        if self.control_mode not in {"cmd_vel", "action"}:
+            raise ValueError("control_mode must be 'cmd_vel' or 'action'")
         if self.side_length <= 0.0:
             raise ValueError("side_length must be > 0.0")
         if self.linear_speed <= 0.0:
@@ -73,10 +96,10 @@ class SquareDriver(Node):
             raise ValueError("pause_time must be >= 0.0")
         if self.wait_for_subscriber_sec < 0.0:
             raise ValueError("wait_for_subscriber_sec must be >= 0.0")
+        if self.wait_for_action_server_sec < 0.0:
+            raise ValueError("wait_for_action_server_sec must be >= 0.0")
 
     def _make_command(self, linear_x: float, angular_z: float):
-        # 受け手が Twist か TwistStamped かに応じてメッセージ型を切り替える。
-        # 「時刻付き cmd_vel が必要な系かどうか」は use_stamped で決まる。
         if self.use_stamped:
             msg = TwistStamped()
             msg.header.stamp = self.get_clock().now().to_msg()
@@ -102,9 +125,6 @@ class SquareDriver(Node):
         if self.wait_for_subscriber_sec == 0.0:
             return True
 
-        # 受信側が現れるまで少し待つ。
-        # wait_for_subscriber_sec を長くすると安全に開始しやすいが、起動待ちは長くなる。
-        # require_subscriber=false にすると、相手がいなくてもそのまま走行を開始する。
         deadline = time.monotonic() + self.wait_for_subscriber_sec
         while rclpy.ok() and time.monotonic() < deadline:
             rclpy.spin_once(self, timeout_sec=0.1)
@@ -132,13 +152,29 @@ class SquareDriver(Node):
         )
         return False
 
+    def wait_for_action_servers(self) -> bool:
+        drive_ready = self.drive_distance_client.wait_for_server(
+            timeout_sec=self.wait_for_action_server_sec
+        )
+        rotate_ready = self.rotate_angle_client.wait_for_server(
+            timeout_sec=self.wait_for_action_server_sec
+        )
+        if not drive_ready:
+            self.get_logger().warn(
+                f"Action server '{self.drive_distance_action_name}' did not appear within "
+                f"{self.wait_for_action_server_sec:.1f} seconds"
+            )
+        if not rotate_ready:
+            self.get_logger().warn(
+                f"Action server '{self.rotate_angle_action_name}' did not appear within "
+                f"{self.wait_for_action_server_sec:.1f} seconds"
+            )
+        return drive_ready and rotate_ready
+
     def publish_for_duration(self, linear_x: float, angular_z: float, duration: float) -> None:
-        # 指定時間だけ一定の速度指令を流し続ける。
-        # publish 周期を細かくしたい場合は sleep 時間を短くするが、CPU 使用率は上がる。
         end_time = time.monotonic() + duration
         while rclpy.ok() and time.monotonic() < end_time:
-            msg = self._make_command(linear_x, angular_z)
-            self.publisher.publish(msg)
+            self.publisher.publish(self._make_command(linear_x, angular_z))
             time.sleep(0.1)
 
         self.stop_robot()
@@ -147,9 +183,45 @@ class SquareDriver(Node):
         self.publisher.publish(self._make_command(0.0, 0.0))
         time.sleep(self.pause_time)
 
-    def run(self) -> None:
-        # 正方形 1 周分のメイン手順。
-        # 「四角形ではなく別の図形にしたい」場合は、このループ回数や直進・旋回順序が編集点。
+    def send_drive_distance_goal(self, distance: float, max_translation_speed: float) -> None:
+        goal = DriveDistance.Goal()
+        goal.distance = float(distance)
+        goal.max_translation_speed = float(max_translation_speed)
+        future = self.drive_distance_client.send_goal_async(goal)
+        rclpy.spin_until_future_complete(self, future)
+        goal_handle = future.result()
+        if goal_handle is None or not goal_handle.accepted:
+            raise RuntimeError(
+                f"DriveDistance goal was rejected by '{self.drive_distance_action_name}'"
+            )
+
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self, result_future)
+        if result_future.result() is None:
+            raise RuntimeError(
+                f"DriveDistance result was not returned from '{self.drive_distance_action_name}'"
+            )
+
+    def send_rotate_angle_goal(self, angle: float, max_rotation_speed: float) -> None:
+        goal = RotateAngle.Goal()
+        goal.angle = float(angle)
+        goal.max_rotation_speed = float(max_rotation_speed)
+        future = self.rotate_angle_client.send_goal_async(goal)
+        rclpy.spin_until_future_complete(self, future)
+        goal_handle = future.result()
+        if goal_handle is None or not goal_handle.accepted:
+            raise RuntimeError(
+                f"RotateAngle goal was rejected by '{self.rotate_angle_action_name}'"
+            )
+
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self, result_future)
+        if result_future.result() is None:
+            raise RuntimeError(
+                f"RotateAngle result was not returned from '{self.rotate_angle_action_name}'"
+            )
+
+    def run_cmd_vel_square(self) -> None:
         self.get_logger().info(
             f"Starting square motion on '{self.cmd_vel_topic}': "
             f"use_stamped={self.use_stamped}, "
@@ -170,6 +242,35 @@ class SquareDriver(Node):
             self.publish_for_duration(self.linear_speed, 0.0, self.forward_time)
             self.get_logger().info(f"Corner {corner + 1}/4: turning left 90 degrees")
             self.publish_for_duration(0.0, self.angular_speed, self.turn_time)
+
+    def run_action_square(self) -> None:
+        self.get_logger().info(
+            f"Starting square motion via actions: "
+            f"drive_distance='{self.drive_distance_action_name}', "
+            f"rotate_angle='{self.rotate_angle_action_name}', "
+            f"side_length={self.side_length:.2f} m, "
+            f"linear_speed={self.linear_speed:.2f} m/s, "
+            f"angular_speed={self.angular_speed:.2f} rad/s"
+        )
+        if not self.wait_for_action_servers():
+            raise RuntimeError(
+                "Aborting: required action servers were not detected. "
+                "Check ros2 action list and the robot bringup."
+            )
+
+        for corner in range(4):
+            self.get_logger().info(f"Side {corner + 1}/4: drive_distance action")
+            self.send_drive_distance_goal(self.side_length, self.linear_speed)
+            time.sleep(self.pause_time)
+            self.get_logger().info(f"Corner {corner + 1}/4: rotate_angle action")
+            self.send_rotate_angle_goal(math.pi / 2.0, self.angular_speed)
+            time.sleep(self.pause_time)
+
+    def run(self) -> None:
+        if self.control_mode == "action":
+            self.run_action_square()
+        else:
+            self.run_cmd_vel_square()
 
         self.stop_robot()
         self.get_logger().info("Finished square motion")

@@ -31,13 +31,13 @@ pwd
 ## 1. PC側: 実機に SSH 接続する
 
 ```bash
-ssh ubuntu@192.168.188.22
+ssh ubuntu@192.168.11.22
 ```
 
 ## 2. PC側: 実機に届くか確認する
 
 ```bash
-ping 192.168.188.22
+ping 192.168.11.22
 ```
 
 ## 3. 実機側: IP アドレスを確認する
@@ -217,9 +217,27 @@ ros2 daemon stop
 `robot2` 用の設定済み RViz を起動します。  
 `/robot2/tf` や `/robot2/tf_static` のリマップも自動で入ります。
 
+実機表示では `./scripts/robot2_rviz.sh --robot` を使うのが基本です。  
+現在の既定設定では、`wheel_tf_publisher` と `odom_tf_publisher` の補助 TF は自動起動しません。  
+実機側の TF と stamp をそのまま使うことで、`TF_OLD_DATA` を起こしにくくしています。  
+また RViz の初期 `Fixed Frame` は `base_link` です。実機時計がずれて `scan` の timestamp が古いときでも、
+`odom` 固定より表示が崩れにくいためです。
+
+`robot2_rviz.sh` は既定で自動判定です。  
+実機 topic が見えれば robot モード、見えなければ sim モードへ切り替わります。  
+固定したい場合だけ `--robot` または `--sim` を付けます。
+
 ```bash
 cd ~/turtlebot4_ws
-./scripts/robot2_rviz.sh
+./scripts/robot2_rviz.sh --robot
+```
+
+wheel TF や odom TF が本当に欠けている環境でだけ、補助ノードを明示的に有効化します。
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_rviz.sh --robot enable_wheel_tf_helper:=true
+./scripts/robot2_rviz.sh --robot enable_odom_tf_helper:=true
 ```
 
 ## 12. PC側: 実機に正方形走行を指示する
@@ -229,8 +247,17 @@ cd ~/turtlebot4_ws
 ./scripts/robot2_square.sh
 ```
 
-`./scripts/robot2_square.sh` は、先に `/robot2/cmd_vel` が見えるか確認してから起動します。  
-見えない場合はそのまま launch せず、実機側 bringup の確認を促して止まります。
+`./scripts/robot2_square.sh` は内部で `source /opt/ros/humble/setup.bash` と
+`source install/setup.bash` を読み込みます。  
+そのため、新しいターミナルからでもこの 1 行だけで実行できます。
+
+`./scripts/robot2_square.sh` は、まず `cmd_vel` 系 topic を確認して、使えるならそこへ流します。  
+`cmd_vel` が見えているのに subscriber が 0 の環境でも、そのまま `cmd_vel` を流します。  
+この構成では DDS graph introspection が実 subscriber を拾えないことがあるためです。  
+その場合の publisher QoS は `reliable` を優先します。  
+`reliable` publisher は `reliable` / `best_effort` のどちらの subscriber とも互換があるためです。  
+`cmd_vel` が見えない場合だけ、`/robot2/drive_distance` と `/robot2/rotate_angle` を使う action モードを試します。  
+`/robot2/velocity_smoother` が動いているときは、`/robot2/cmd_vel_nav` を自動で選んでそこへ流します。
 
 手早く状態確認したいとき:
 
@@ -239,7 +266,9 @@ cd ~/turtlebot4_ws
 ./scripts/robot2_status.sh
 ```
 
-`ros2 topic info -v /robot2/cmd_vel` で `Subscription count: 1` と `/robot2/create3_repub` が見えてから実行します。
+通常は `ros2 topic info -v /robot2/cmd_vel` で subscriber が見えてから実行します。  
+Nav2 の `velocity_smoother` を使っている場合は、`robot2_square.sh` が `/robot2/cmd_vel_nav` を自動で選びます。
+`create3_repub` が見えない構成でも、`/robot2/cmd_vel` 自体が見えていればそのまま走行を続けます。
 
 ## 13. PC側: 正方形走行のパラメータを変える
 
@@ -281,12 +310,16 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/rob
 ```bash
 cd ~/turtlebot4_ws
 source scripts/robot2_env.bash
+date +%s
 ros2 topic echo /robot2/robot_description --once
 ros2 topic echo /robot2/tf --once
 ros2 topic echo /robot2/tf_static --once
 ros2 topic echo /robot2/odom --once
-ros2 topic echo /robot2/scan --once
+ros2 topic echo /robot2/scan --once | sed -n '1,8p'
 ```
+
+`/robot2/scan` の `header.stamp.sec` は、直前の `date +%s` に近い値である必要があります。  
+ここが大きくずれている場合、RViz で LaserScan が表示されないことがあります。
 
 ## 16. このプロジェクトでよく使うトピック
 
@@ -311,6 +344,7 @@ ros2 topic echo /robot2/scan --once
 
 ```bash
 turtlebot4-source
+date +%s
 turtlebot4-daemon-restart
 ros2 topic list | grep robot2
 ```
@@ -394,7 +428,7 @@ printenv ROS_DISTRO
 cd ~/turtlebot4_ws
 git status
 git add .
-git commit -m "Update Humble workspace"
+git commit -m "コミットメッセージを入力"
 git push
 ```
 
@@ -467,7 +501,7 @@ git status
 cd ~/jazzy_ff_ws
 git status
 git add .
-git commit -m "Update Jazzy free_fleet workspace"
+git commit -m "コミットメッセージを入力"
 git push
 ```
 
@@ -585,22 +619,27 @@ ros2 topic list | grep robot2
 ```bash
 cd ~/turtlebot4_ws
 source scripts/robot2_env.bash
+date +%s
 ros2 topic echo /robot2/robot_description --once
 ros2 topic info -v /robot2/robot_description
 ros2 topic echo /robot2/tf --once
 ros2 topic echo /robot2/tf_static --once
+ros2 topic echo /robot2/scan --once | sed -n '1,8p'
 ```
 
 `RobotModel` が赤エラーになる場合は、RViz の `RobotModel > Description Topic` が次になっているか確認します。
 
 - `Value`: `/robot2/robot_description`
 - `Durability Policy`: `Transient Local`
-- `Fixed Frame`: `odom`
+- `Fixed Frame`: `base_link`
 
-`left_wheel` などで `No transform from [left_wheel] to [odom]` が出る場合は、実機側の wheel TF が出ていない状態です。  
-`robot2_rviz.launch.py` では RViz 表示用の wheel TF 補助ノードも一緒に起動します。  
-最新版の `wheel_tf_publisher` は `joint_states` が一時的に来なくてもフォールバックの wheel TF を出し続けます。  
-さらに `odom_tf_publisher` が `/robot2/odom` 不在時も RViz 用の `odom -> base_link` を補うので、RViz は `./scripts/robot2_rviz.sh` から起動するのが前提です。
+`left_wheel` などで `No transform from [left_wheel] to [base_link]` が出る場合は、実機側の wheel TF が出ていない状態です。  
+現在の `robot2_rviz.launch.py` では、`wheel_tf_publisher` と `odom_tf_publisher` は既定で起動しません。  
+補助 TF を常時混ぜると、実機側 stamp と競合して `TF_OLD_DATA` や LaserScan の取りこぼしが出やすいためです。  
+まずは実機側の `/robot2/tf`, `/robot2/joint_states`, `/robot2/odom` を確認し、必要な場合だけ補助ノードを明示的に有効化します。
+
+`/robot2/scan` の `header.stamp.sec` が `date +%s` と大きくずれている場合は、実機時計が古いままです。  
+このときは RViz の `Fixed Frame` を `base_link` にしても表示が不安定になることがあるため、実機側で時刻同期をやり直します。
 
 補助ノードだけ確認するとき:
 
@@ -609,6 +648,18 @@ cd ~/turtlebot4_ws
 source scripts/robot2_env.bash
 ros2 run tb4_square wheel_tf_publisher --ros-args -r /tf:=/robot2/tf
 ```
+
+LaserScan の timestamp が古いときの確認:
+
+```bash
+# 実機側
+turtlebot4-source
+date +%s
+ros2 topic echo /robot2/scan --once | sed -n '1,8p'
+```
+
+ここで `header.stamp.sec` が現在時刻系でなければ、実機側で時刻を直してから
+`turtlebot4-daemon-restart`、必要なら `sudo reboot` を行います。
 
 ## 20. ノードや launch を止める
 

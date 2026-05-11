@@ -6,7 +6,10 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Odometry
 from nav_msgs.msg import Path
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
 
 
 class OdomPathPublisher(Node):
@@ -30,8 +33,9 @@ class OdomPathPublisher(Node):
 
         self.poses = deque(maxlen=self.max_poses)
         self.path_publisher = self.create_publisher(Path, self.path_topic, 10)
+        qos_profile = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
         self.odom_subscription = self.create_subscription(
-            Odometry, self.odom_topic, self.odom_callback, 10
+            Odometry, self.odom_topic, self.odom_callback, qos_profile
         )
 
         self.get_logger().info(
@@ -59,6 +63,9 @@ def main(args=None) -> None:
     node = OdomPathPublisher()
     try:
         rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

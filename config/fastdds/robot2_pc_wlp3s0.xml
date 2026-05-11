@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>robot2_pc_udp_whitelist</transport_id>
+      <type>UDPv4</type>
+      <interfaceWhiteList>
+        <interface>lo</interface>
+        <interface>wlp3s0</interface>
+      </interfaceWhiteList>
+    </transport_descriptor>
+  </transport_descriptors>
+
+  <participant profile_name="robot2_pc_participant" is_default_profile="true">
+    <rtps>
+      <useBuiltinTransports>false</useBuiltinTransports>
+      <userTransports>
+        <transport_id>robot2_pc_udp_whitelist</transport_id>
+      </userTransports>
+    </rtps>
+  </participant>
+</profiles>
