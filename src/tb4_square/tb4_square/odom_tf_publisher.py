@@ -23,12 +23,14 @@ class OdomTfPublisher(Node):
         self.declare_parameter("child_frame", "base_link")
         self.declare_parameter("publish_rate", 20.0)
         self.declare_parameter("stale_after_sec", 1.0)
+        self.declare_parameter("use_msg_stamp", True)
 
         self.odom_topic = str(self.get_parameter("odom_topic").value)
         self.parent_frame = str(self.get_parameter("parent_frame").value)
         self.child_frame = str(self.get_parameter("child_frame").value)
         publish_rate = float(self.get_parameter("publish_rate").value)
         self.stale_after_sec = float(self.get_parameter("stale_after_sec").value)
+        self.use_msg_stamp = bool(self.get_parameter("use_msg_stamp").value)
         if publish_rate <= 0.0:
             raise ValueError("publish_rate must be > 0")
         if self.stale_after_sec < 0.0:
@@ -49,7 +51,8 @@ class OdomTfPublisher(Node):
 
         self.get_logger().info(
             f"Publishing fallback odom TF from '{self.odom_topic}' as "
-            f"{self.parent_frame} -> {self.child_frame}"
+            f"{self.parent_frame} -> {self.child_frame} "
+            f"(use_msg_stamp={self.use_msg_stamp})"
         )
 
     def odom_callback(self, msg: Odometry) -> None:
@@ -80,7 +83,7 @@ class OdomTfPublisher(Node):
             self.broadcaster.sendTransform(transform)
             return
 
-        if self.latest_odom_stamp is not None:
+        if self.use_msg_stamp and self.latest_odom_stamp is not None:
             transform.header.stamp = self.latest_odom_stamp
         else:
             transform.header.stamp = self.get_clock().now().to_msg()

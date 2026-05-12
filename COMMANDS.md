@@ -428,7 +428,7 @@ printenv ROS_DISTRO
 cd ~/turtlebot4_ws
 git status
 git add .
-git commit -m "コミットメッセージを入力"
+git commit -m "ロボット動作・RViz復旧"
 git push
 ```
 

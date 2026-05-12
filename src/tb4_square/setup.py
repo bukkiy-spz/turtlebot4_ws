@@ -30,9 +30,11 @@ setup(
         # ここで定義した名前が ros2 run で呼べる executable 名になる。
         # 新しい Python ノードを追加したら、この一覧に追記するのが基本。
         "console_scripts": [
+            "lifecycle_bringup_retry = tb4_square.lifecycle_bringup_retry:main",
             "odom_tf_publisher = tb4_square.odom_tf_publisher:main",
             "odom_path_publisher = tb4_square.odom_path_publisher:main",
             "square_driver = tb4_square.square_driver:main",
+            "tf_filter_republisher = tb4_square.tf_filter_republisher:main",
             "wheel_tf_publisher = tb4_square.wheel_tf_publisher:main",
         ],
     },

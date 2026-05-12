@@ -35,7 +35,7 @@ def launch_setup(context, *args, **kwargs):
     ]
 
     remappings = [
-        ("/tf", "tf"),
+        ("/tf", "tf_nav"),
         ("/tf_static", "tf_static"),
     ]
 
@@ -84,9 +84,10 @@ def launch_setup(context, *args, **kwargs):
                         "child_frame": "base_link",
                         "publish_rate": 20.0,
                         "stale_after_sec": 1.0,
+                        "use_msg_stamp": True,
                     },
                 ],
-                remappings=[("/tf", namespace_str + "/tf")],
+                remappings=[("/tf", namespace_str + "/tf_nav")],
             ),
             Node(
                 package="nav2_controller",
@@ -146,15 +147,19 @@ def launch_setup(context, *args, **kwargs):
                 ],
             ),
             Node(
-                package="nav2_lifecycle_manager",
-                executable="lifecycle_manager",
-                name="lifecycle_manager_navigation",
+                package="tb4_square",
+                executable="lifecycle_bringup_retry",
+                name="lifecycle_bringup_retry_navigation",
                 output="screen",
                 arguments=["--ros-args", "--log-level", log_level],
                 parameters=[
                     {"use_sim_time": use_sim_time},
-                    {"autostart": autostart},
                     {"node_names": lifecycle_nodes},
+                    {"target_namespace": namespace},
+                    {"retry_count": 30},
+                    {"service_wait_sec": 2.0},
+                    {"retry_delay_sec": 1.0},
+                    {"startup_delay_sec": 5.0},
                 ],
             ),
         ]
