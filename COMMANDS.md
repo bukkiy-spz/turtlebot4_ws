@@ -366,6 +366,161 @@ cd ~/turtlebot4_ws
 ./scripts/robot2_rviz.sh
 ```
 
+## 17-1. 2026-05-12 時点の実機 Nav2 立ち上げ確定手順
+
+今回最終的に安定したのは、次の前提です。
+
+- PC: `192.168.11.1`
+- `turtlebot4-2` Wi-Fi: `192.168.11.22`
+- `turtlebot4-2` USB: `192.168.186.3`
+- Create 3: `192.168.186.2`
+- `localization` と `Nav2` は `PC側` ではなく `実機側` で起動する
+
+### A. まず時刻を確認する
+
+PC側:
+
+```bash
+date
+chronyc tracking
+```
+
+実機側:
+
+```bash
+date
+chronyc tracking
+curl -I http://192.168.186.2
+```
+
+ここで全部が現在時刻付近でそろっていることが前提です。  
+`506 Cannot talk to daemon` が出るときは `chronyd` が止まっています。
+
+### B. 実機側の ROS ノードを時刻修正後に再起動する
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+turtlebot4-daemon-restart
+sleep 10
+timeout 5 ros2 topic echo /robot2/scan --once
+timeout 5 ros2 topic echo /robot2/tf --once
+timeout 5 ros2 topic echo /robot2/odom --once
+```
+
+`header.stamp.sec` が現在時刻の epoch 秒付近まで来ていることを確認します。  
+ここが古いままだと `TF_OLD_DATA` と `AMCL` の `Message Filter dropping message` が続きます。
+
+### C. PC側の接続環境を入れ直す
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source scripts/robot2_env.bash
+source install/setup.bash
+ros2 daemon stop
+ros2 daemon start
+```
+
+### D. Localization は実機側で起動する
+
+実機側:
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+ros2 daemon stop
+ros2 daemon start
+ros2 launch turtlebot4_navigation localization.launch.py \
+  namespace:=robot2 \
+  use_sim_time:=false \
+  map:=/opt/ros/humble/share/turtlebot4_navigation/maps/depot.yaml
+```
+
+### E. Initial Pose は必要なら実機側から直接入れる
+
+まず `amcl` と subscriber を確認します。
+
+```bash
+ros2 lifecycle get /robot2/amcl
+ros2 topic info -v /robot2/initialpose
+```
+
+投入:
+
+```bash
+ros2 topic pub -1 --qos-reliability best_effort /robot2/initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+"{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: -0.1, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.068]}}"
+```
+
+確認:
+
+```bash
+timeout 5 ros2 topic echo /robot2/amcl_pose --once
+timeout 5 ros2 run tf2_ros tf2_echo map odom --ros-args -r /tf:=/robot2/tf -r /tf_static:=/robot2/tf_static
+```
+
+`amcl_pose` が出て、`map -> odom` が見えれば localization は成功です。
+
+### F. Nav2 も実機側で起動する
+
+実機側:
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+ros2 launch turtlebot4_navigation nav2.launch.py \
+  namespace:=robot2 \
+  use_sim_time:=false
+```
+
+PC側で確認:
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source scripts/robot2_env.bash
+source install/setup.bash
+ros2 action list | grep navigate_to_pose
+ros2 node list | grep -E '/robot2/(controller_server|planner_server|bt_navigator|waypoint_follower|velocity_smoother|behavior_server|smoother_server)'
+```
+
+`/robot2/navigate_to_pose` が見えれば、実機 `Nav2` は立っています。
+
+### G. 詰まったときの最短確認
+
+時刻:
+
+```bash
+date
+chronyc tracking
+curl -I http://192.168.186.2
+```
+
+実機 topic:
+
+```bash
+timeout 5 ros2 topic echo /robot2/scan --once
+timeout 5 ros2 topic echo /robot2/tf --once
+timeout 5 ros2 topic echo /robot2/odom --once
+```
+
+localization:
+
+```bash
+ros2 lifecycle get /robot2/map_server
+ros2 lifecycle get /robot2/amcl
+timeout 5 ros2 topic echo /robot2/amcl_pose --once
+timeout 5 ros2 run tf2_ros tf2_echo map odom --ros-args -r /tf:=/robot2/tf -r /tf_static:=/robot2/tf_static
+```
+
+Nav2:
+
+```bash
+ros2 action list | grep navigate_to_pose
+ros2 node list | grep -E '/robot2/(controller_server|planner_server|bt_navigator)'
+```
+
 ## 18. Humble 用と Jazzy/free_fleet 用を分けて運用する
 
 今後の前提は次です。
@@ -428,7 +583,7 @@ printenv ROS_DISTRO
 cd ~/turtlebot4_ws
 git status
 git add .
-git commit -m "ロボット動作・RViz復旧"
+git commit -m "Nav2まで確認"
 git push
 ```
 
