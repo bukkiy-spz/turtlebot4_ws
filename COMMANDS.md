@@ -449,9 +449,16 @@ ros2 topic info -v /robot2/initialpose
 投入:
 
 ```bash
-ros2 topic pub -1 --qos-reliability best_effort /robot2/initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
-"{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: -0.1, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.068]}}"
+timeout 3 ros2 topic pub /robot2/initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+"{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: -0.1, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.068]}}" \
+--rate 5 \
+--qos-reliability best_effort
 ```
+
+補足:
+
+- `-1` の単発 publish で取りこぼすときは、この `timeout 3` の連続 publish 版の方が安定
+- 送信後に実機を少し動かすか、その場回転すると `amcl_pose` が出やすい
 
 確認:
 
@@ -521,6 +528,135 @@ ros2 action list | grep navigate_to_pose
 ros2 node list | grep -E '/robot2/(controller_server|planner_server|bt_navigator)'
 ```
 
+## 17-2. 次回用: Nav2 起動の最短チェック手順
+
+時刻同期が正常なときは、この順で確認すると早いです。
+
+### 1. PC側: 上流 NTP が生きているか
+
+```bash
+chronyc tracking
+date
+```
+
+期待する状態:
+
+- `Reference ID` に `ntp-a*.nict.go.jp` など NICT 系が出る
+- `Leap status : Normal`
+
+### 2. 実機側: PC 経由の同期が生きているか
+
+```bash
+chronyc tracking
+date
+curl -I http://192.168.186.2
+```
+
+期待する状態:
+
+- `Reference ID : C0A80B01 (192.168.11.1)` のように PC を見ている
+- `date` が現在時刻
+- `curl -I` の `Date:` も現在時刻相当
+
+補足:
+
+- `curl -I` の `Date:` は `GMT/UTC` 表示なので、JST より 9 時間小さく見えて正常
+
+### 3. 実機側: ROS ノードを時刻修正後に再起動する
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+turtlebot4-daemon-restart
+sleep 10
+timeout 5 ros2 topic echo /robot2/scan --once
+timeout 5 ros2 topic echo /robot2/tf --once
+timeout 5 ros2 topic echo /robot2/odom --once
+```
+
+期待する状態:
+
+- `scan` / `tf` / `odom` の `header.stamp.sec` が現在の epoch 秒付近
+
+### 4. PC側: discovery 環境を入れ直す
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source scripts/robot2_env.bash
+source install/setup.bash
+ros2 daemon stop
+ros2 daemon start
+```
+
+### 5. 実機側: Localization を起動する
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+ros2 daemon stop
+ros2 daemon start
+ros2 launch turtlebot4_navigation localization.launch.py \
+  namespace:=robot2 \
+  use_sim_time:=false \
+  map:=/opt/ros/humble/share/turtlebot4_navigation/maps/depot.yaml
+```
+
+### 6. 実機側: Initial Pose を入れる
+
+```bash
+timeout 3 ros2 topic pub /robot2/initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+"{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: -0.1, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.068]}}" \
+--rate 5 \
+--qos-reliability best_effort
+```
+
+確認:
+
+```bash
+timeout 5 ros2 topic echo /robot2/amcl_pose --once
+timeout 5 ros2 run tf2_ros tf2_echo map odom --ros-args -r /tf:=/robot2/tf -r /tf_static:=/robot2/tf_static
+```
+
+期待する状態:
+
+- `amcl_pose` が返る
+- `map -> odom` が見える
+
+### 7. 実機側: Nav2 を起動する
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+ros2 launch turtlebot4_navigation nav2.launch.py \
+  namespace:=robot2 \
+  use_sim_time:=false
+```
+
+### 8. PC側: Nav2 が立ったか確認する
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source scripts/robot2_env.bash
+source install/setup.bash
+ros2 action list | grep navigate_to_pose
+ros2 node list | grep -E '/robot2/(controller_server|planner_server|bt_navigator|waypoint_follower|velocity_smoother|behavior_server|smoother_server)'
+```
+
+期待する状態:
+
+- `/robot2/navigate_to_pose` が見える
+
+### 9. ここで詰まったときの見る順番
+
+1. `chronyc tracking`
+2. `curl -I http://192.168.186.2`
+3. `/robot2/scan`, `/robot2/tf`, `/robot2/odom` の stamp
+4. `/robot2/amcl_pose`
+5. `tf2_echo map odom`
+6. `/robot2/navigate_to_pose`
+
 ## 18. Humble 用と Jazzy/free_fleet 用を分けて運用する
 
 今後の前提は次です。
@@ -583,7 +719,7 @@ printenv ROS_DISTRO
 cd ~/turtlebot4_ws
 git status
 git add .
-git commit -m "Nav2まで確認"
+git commit -m "コマンドリスト更新"
 git push
 ```
 
