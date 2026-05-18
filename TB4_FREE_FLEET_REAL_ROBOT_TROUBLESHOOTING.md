@@ -136,3 +136,48 @@ OK:
 ```text
 /home/ubuntu/maps/tb4/tb4_map.yaml
 ```
+
+## 9. `Behavior Tree tick rate 100.00 was exceeded!`
+
+この warning 単体は、実機 Nav2 ではそこまで珍しくない。
+
+見方:
+
+- 制御周期 100Hz に対して BT の処理が少し遅れた
+- 単発なら様子見でよい
+- `Reached the goal!` まで出ていれば致命傷ではない
+
+## 10. `Failed to make progress` のあとにゴールできる
+
+今回のように:
+
+- `Failed to make progress`
+- `clear entirely the local_costmap`
+- 再試行
+- `Reached the goal!`
+
+という流れなら、Nav2 の recovery が効いている。
+
+改善の方向:
+
+- waypoint を壁や障害物から少し離す
+- 近すぎる waypoint を離す
+- `initialpose` の向きを実機の向きに合わせる
+
+## 11. `map_saver_cli` が `Failed to spin map subscription`
+
+原因:
+
+- 実際の map topic が `/robot2/map`
+- なのに `map_saver_cli` が `/map` を見ていた
+
+対処:
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+
+ros2 run nav2_map_server map_saver_cli \
+  -f /home/ubuntu/maps/tb4/tb4_map_20260518 \
+  --ros-args -r map:=/robot2/map
+```

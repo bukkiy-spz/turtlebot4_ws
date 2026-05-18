@@ -151,3 +151,42 @@ ros2 action send_goal /robot2/navigate_to_pose nav2_msgs/action/NavigateToPose \
 ```bash
 ~/turtlebot4_ws/scripts/robot2_status.sh
 ```
+
+## 14. Robot 側 map 保存（`/robot2/map`）
+
+`map_saver_cli` が `/map` 前提だと失敗することがあるので、
+この環境では `/robot2/map` を明示して保存する。
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+
+mkdir -p /home/ubuntu/maps/tb4
+ros2 run nav2_map_server map_saver_cli \
+  -f /home/ubuntu/maps/tb4/tb4_map_20260518 \
+  --ros-args -r map:=/robot2/map
+```
+
+## 15. Robot 側 Nav2 単体切り分け
+
+RMF を挟む前に、実機単体で Nav2 が通るか確認する。
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+
+ros2 action send_goal /robot2/navigate_to_pose nav2_msgs/action/NavigateToPose \
+"{pose: {header: {frame_id: map}, pose: {position: {x: -1.90, y: -0.50, z: 0.0}, orientation: {w: 1.0}}}}"
+```
+
+## 16. Host 側 dispatch（`rmf_main_ws`）
+
+`rmf_demos_tasks` を build 済みなら、Host 側から waypoint 指定で投げられる。
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/rmf_main_ws/install/setup.bash
+source ~/fleet_adapter_template_tb4_ws/install/setup.bash
+
+ros2 run rmf_demos_tasks dispatch_go_to_place -F tb4_fleet -R robot2 -p LP1
+```
