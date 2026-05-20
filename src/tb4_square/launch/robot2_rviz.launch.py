@@ -28,6 +28,8 @@ def generate_launch_description() -> LaunchDescription:
             # rviz_config を差し替えると、表示するトピックや見た目の初期設定を切り替えられる。
             DeclareLaunchArgument("rviz_config", default_value=default_rviz_config),
             DeclareLaunchArgument("model", default_value="standard"),
+            DeclareLaunchArgument("tf_topic", default_value="/robot2/tf"),
+            DeclareLaunchArgument("tf_static_topic", default_value="/robot2/tf_static"),
             # simulation を見るときは true のまま使う。
             # false にすると /clock ではなく PC の時計で動くため、TF や LaserScan が
             # 古いデータ扱いになることがある。
@@ -146,8 +148,8 @@ def generate_launch_description() -> LaunchDescription:
                 arguments=["-d", LaunchConfiguration("rviz_config")],
                 parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
                 remappings=[
-                    ("/tf", "/robot2/tf"),
-                    ("/tf_static", "/robot2/tf_static"),
+                    ("/tf", LaunchConfiguration("tf_topic")),
+                    ("/tf_static", LaunchConfiguration("tf_static_topic")),
                 ],
             ),
         ]

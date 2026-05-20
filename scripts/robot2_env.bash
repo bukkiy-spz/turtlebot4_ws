@@ -98,7 +98,7 @@ _robot2_write_fastdds_profile
 # Keep this aligned with /etc/turtlebot4_discovery/setup.bash on the robot/PC.
 # Fast DDS examples accept the first server without a leading ';', but we keep
 # the same trailing ';' format here to avoid drift between shell entrypoints.
-[ -t 0 ] && export ROS_SUPER_CLIENT=True || export ROS_SUPER_CLIENT=False
+export ROS_SUPER_CLIENT="${ROBOT2_ROS_SUPER_CLIENT:-True}"
 export ROS_DISCOVERY_SERVER="${_robot2_discovery_server}"
 
 echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"

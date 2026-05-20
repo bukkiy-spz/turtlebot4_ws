@@ -117,7 +117,25 @@ def launch_setup(context, *args, **kwargs):
                 output="screen",
                 respawn=use_respawn,
                 respawn_delay=2.0,
-                parameters=[configured_params],
+                parameters=[
+                    configured_params,
+                    {
+                        "default_nav_to_pose_bt_xml": PathJoinSubstitution(
+                            [
+                                pkg_tb4_square,
+                                "behavior_trees",
+                                "navigate_to_pose_no_recovery.xml",
+                            ]
+                        ),
+                        "default_nav_through_poses_bt_xml": PathJoinSubstitution(
+                            [
+                                pkg_tb4_square,
+                                "behavior_trees",
+                                "navigate_through_poses_no_recovery.xml",
+                            ]
+                        ),
+                    },
+                ],
                 arguments=["--ros-args", "--log-level", log_level],
                 remappings=remappings,
             ),

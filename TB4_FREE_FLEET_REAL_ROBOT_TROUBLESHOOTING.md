@@ -1,183 +1,141 @@
-# TB4 free_fleet Real Robot Troubleshooting
+# TB4 Real Robot Troubleshooting
 
-このファイルは `turtlebot4_ws` 視点の Robot 側トラブルメモです。
+このファイルは、`turtlebot4_ws` から `robot2` 実機を直接扱うときの詰まりどころをまとめたものです。
 
-## 1. Robot 再起動後に時計が戻る
+## 1. RViz に `No map received` が出る
 
-症状:
-
-- `date` が 2025 に戻る
-- `chronyc tracking` が `506 Cannot talk to daemon`
-
-確認:
+まず `SLAM` 自体が起動しているかを見る。
 
 ```bash
-date
-chronyc tracking
-curl -I http://192.168.186.2
-```
-
-`curl` の `Date:` は Create3 側の現在時刻の参考になります。
-
-対処:
-
-```bash
-grep '^server ' /etc/chrony/chrony.conf
-sudo timedatectl set-ntp false
-sudo date -s '2026-05-14 16:07:39'
-sudo systemctl enable --now chrony
-sleep 3
-chronyc tracking
-chronyc sources -v
-```
-
-正しい upstream:
-
-```text
-server 192.168.11.104
-```
-
-## 2. `scan` だけ古い
-
-確認:
-
-```bash
-date +%s
-timeout 5 ros2 topic echo /robot2/scan --once
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 topic list | grep /robot2/map
+timeout 5 ros2 topic echo /robot2/map --once
 ```
 
 対処:
 
-```bash
-turtlebot4-daemon-restart
-sleep 10
-```
+- `./scripts/robot2_slam.sh` を使う
+- `Map` display の topic を `/robot2/map` にする
+- `Fixed Frame` を `map` にする
 
-戻らなければ robot 再起動。
-
-## 3. `amcl_pose` は出るのに `map -> odom` が安定しない
-
-まず少し待つ:
-
-```bash
-timeout 10 ros2 run tf2_ros tf2_echo map odom --ros-args -r /tf:=/robot2/tf -r /tf_static:=/robot2/tf_static
-```
-
-起動直後は 1 回だけ `Invalid frame ID "map"` が出てもよいです。
-その後に transform が出れば正常です。
-
-## 4. `map -> odom` は `/robot2/tf` にいるが container に流れない
-
-原因:
-
-- bridge は global `/tf` を見ている
-- `map -> odom` は `/robot2/tf` 側にいる
-
-対処:
-
-- Robot 側 `/robot2/tf -> /tf` relay を起動
-- Robot 側 bridge を再起動
-
-## 5. Nav2/costmap が `rplidar_link` を捨てる
-
-症状:
-
-```text
-Message Filter dropping message: frame 'rplidar_link' ...
-```
+## 2. `Message Filter dropping message ... queue is full`
 
 意味:
 
-- costmap がその scan 時刻の TF を見つけられない
+- `RViz` が `scan` や `odom` を `map` へ変換したい
+- でも `map -> odom` がまだ無い、または TF topic が違う
 
-まず見るもの:
-
-```bash
-date +%s
-timeout 5 ros2 topic echo /robot2/scan --once
-timeout 5 ros2 topic echo /robot2/tf --once
-timeout 5 ros2 topic echo /robot2/odom --once
-```
-
-## 6. 手動で robot を動かしたあとに Nav2 が崩れた
-
-おすすめ復旧順:
-
-1. `nav2_send_navigate_to_pose.py` 停止
-2. Robot 側 `nav2.launch.py` 停止
-3. Robot 側 `localization.launch.py` 停止
-4. `scan/tf/odom` の時刻確認
-5. `localization` 起動
-6. `initialpose`
-7. `amcl_pose` と `map -> odom` 確認
-8. relay
-9. bridge
-10. `nav2.launch.py`
-
-## 7. Robot 側 direct Nav2 で動くか切り分ける
+確認:
 
 ```bash
-ros2 action send_goal /robot2/navigate_to_pose nav2_msgs/action/NavigateToPose \
-"{pose: {header: {frame_id: map}, pose: {position: {x: -1.25, y: -0.55, z: 0.0}, orientation: {w: 1.0}}}}"
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+timeout 5 ros2 topic echo /robot2/map --once
+timeout 5 ros2 run tf2_ros tf2_echo map odom \
+  --ros-args -r /tf:=/robot2/tf_nav -r /tf_static:=/robot2/tf_static
 ```
-
-これで動けば、free_fleet より先に robot 側 Nav2 は OK です。
-
-## 8. 使ってはいけない地図パス
-
-NG:
-
-```text
-/home/masu_ubu/rmf_ws/maps/tb4/tb4_map.yaml
-```
-
-OK:
-
-```text
-/home/ubuntu/maps/tb4/tb4_map.yaml
-```
-
-## 9. `Behavior Tree tick rate 100.00 was exceeded!`
-
-この warning 単体は、実機 Nav2 ではそこまで珍しくない。
-
-見方:
-
-- 制御周期 100Hz に対して BT の処理が少し遅れた
-- 単発なら様子見でよい
-- `Reached the goal!` まで出ていれば致命傷ではない
-
-## 10. `Failed to make progress` のあとにゴールできる
-
-今回のように:
-
-- `Failed to make progress`
-- `clear entirely the local_costmap`
-- 再試行
-- `Reached the goal!`
-
-という流れなら、Nav2 の recovery が効いている。
-
-改善の方向:
-
-- waypoint を壁や障害物から少し離す
-- 近すぎる waypoint を離す
-- `initialpose` の向きを実機の向きに合わせる
-
-## 11. `map_saver_cli` が `Failed to spin map subscription`
-
-原因:
-
-- 実際の map topic が `/robot2/map`
-- なのに `map_saver_cli` が `/map` を見ていた
 
 対処:
 
-```bash
-source /opt/ros/humble/setup.bash
-turtlebot4-source
+- `SLAM` 中は数秒だけ出るのは珍しくない
+- `localization` / `Nav2` では RViz を `tf_topic:=/robot2/tf_nav` で開く
+- `initial pose` を入れて `map -> odom` を作る
 
-ros2 run nav2_map_server map_saver_cli \
-  -f /home/ubuntu/maps/tb4/tb4_map_20260518 \
-  --ros-args -r map:=/robot2/map
+## 3. RViz の Robot Model が `No transform from ...`
+
+典型原因:
+
+- `localization` / `Nav2` 段階で `/robot2/tf` を見ている
+- 本当は `/robot2/tf_nav` を見るべき
+
+正しい起動:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 launch tb4_square robot2_rviz.launch.py \
+  rviz_config:=$(ros2 pkg prefix tb4_square --share)/rviz/robot2_slam.rviz \
+  use_sim_time:=false \
+  tf_topic:=/robot2/tf_nav
 ```
+
+## 4. `map_server/get_state timed out`
+
+これは `map_server` 自体ではなく、lifecycle bringup 側の待ち方で起きていた。
+
+現状:
+
+- `tb4_square/lifecycle_bringup_retry.py` 側を修正済み
+- `robot2_localization_compat.launch.py` を使えばよい
+
+再起動:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 launch tb4_square robot2_localization_compat.launch.py \
+  map:=$HOME/maps/robot2_map.yaml
+```
+
+## 5. Nav2 起動時に `"spin" action server not available`
+
+原因:
+
+- 既定 BT が recovery 用 `spin` action server を要求していた
+
+現状:
+
+- `robot2_nav2_compat.launch.py` で repo 内の `no_recovery` BT を明示指定済み
+
+使うコマンド:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 launch tb4_square robot2_nav2_compat.launch.py
+```
+
+## 6. `initial pose` が入らない
+
+確認:
+
+- `RViz` の `Fixed Frame` が `map`
+- `2D Pose Estimate` の topic が `/robot2/initialpose`
+- `localization` が起動済み
+
+CLI での代替:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+timeout 3 ros2 topic pub /robot2/initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+"{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.068]}}" \
+--rate 5 \
+--qos-reliability best_effort
+```
+
+## 7. direct Nav2 goal は通るが RMF へ進めない
+
+まず `robot2` 単体の最低条件を再確認する。
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+timeout 5 ros2 topic echo /robot2/amcl_pose --once
+ros2 action list | grep /robot2/navigate_to_pose
+```
+
+これが通らない間は `fleet adapter` 側を見ても詰まりやすい。
+
+## 8. `SLAM` と `AMCL` を同時に動かしてしまった
+
+対処:
+
+1. `teleop` を止める
+2. `SLAM` を止める
+3. `localization` を起動し直す
+4. `initial pose` を入れ直す
+5. `Nav2` を起動する
+
+`SLAM` 中に保存した map を使う段階では、`SLAM` と `AMCL` は分ける。

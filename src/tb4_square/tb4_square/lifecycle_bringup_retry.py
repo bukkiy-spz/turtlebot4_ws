@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from typing import Iterable
 
@@ -43,6 +44,9 @@ class LifecycleBringupRetry(Node):
         self.completed = True
         self.timer.cancel()
 
+        threading.Thread(target=self._bringup_worker, daemon=True).start()
+
+    def _bringup_worker(self) -> None:
         ok = self.bringup_nodes(self.node_names)
         if ok:
             self.get_logger().info("Lifecycle bringup completed.")
@@ -114,8 +118,7 @@ class LifecycleBringupRetry(Node):
 
             request = GetState.Request()
             future = client.call_async(request)
-            rclpy.spin_until_future_complete(self, future, timeout_sec=self.service_wait_sec)
-            if future.done() and future.result() is not None:
+            if self.wait_for_future(future, self.service_wait_sec) and future.result() is not None:
                 current_id = future.result().current_state.id
                 current_label = future.result().current_state.label
                 self.get_logger().info(
@@ -149,8 +152,11 @@ class LifecycleBringupRetry(Node):
             request = ChangeState.Request()
             request.transition.id = transition_id
             future = client.call_async(request)
-            rclpy.spin_until_future_complete(self, future, timeout_sec=self.service_wait_sec)
-            if future.done() and future.result() is not None and future.result().success:
+            if (
+                self.wait_for_future(future, self.service_wait_sec)
+                and future.result() is not None
+                and future.result().success
+            ):
                 self.get_logger().info(
                     f"{node_name} {transition_name} succeeded "
                     f"(attempt {attempt}/{self.retry_count})."
@@ -167,6 +173,14 @@ class LifecycleBringupRetry(Node):
             f"{node_name} failed to {transition_name} after {self.retry_count} attempts."
         )
         return False
+
+    def wait_for_future(self, future, timeout_sec: float) -> bool:
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if future.done():
+                return True
+            time.sleep(0.05)
+        return future.done()
 
 
 def main(args=None) -> None:

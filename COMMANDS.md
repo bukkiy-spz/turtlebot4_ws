@@ -165,7 +165,7 @@ ros2 service list | grep robot_state_publisher
 ```
 
 特に次のどれかが出ないときは、いったん `Ctrl+C` で止めてから `10-1` の手順で再起動します。
-
+無反応
 - `robot_state_publisher`
 - `robot_description`
 - `robot_state_publisher/get_parameters`
@@ -267,7 +267,9 @@ cd ~/turtlebot4_ws
 ```
 
 通常は `ros2 topic info -v /robot2/cmd_vel` で subscriber が見えてから実行します。  
-Nav2 の `velocity_smoother` を使っている場合は、`robot2_square.sh` が `/robot2/cmd_vel_nav` を自動で選びます。
+Nav2 の `velocity_smoothercd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/robot2/cmd_vel` を使っている場合は、`robot2_square.sh` が `/robot2/cmd_vel_nav` を自動で選びます。
 `create3_repub` が見えない構成でも、`/robot2/cmd_vel` 自体が見えていればそのまま走行を続けます。
 
 ## 13. PC側: 正方形走行のパラメータを変える
@@ -719,7 +721,7 @@ printenv ROS_DISTRO
 cd ~/turtlebot4_ws
 git status
 git add .
-git commit -m "コマンドリスト更新"
+git commit -m "free fleet接続・コマンドリストとトラブルシューティング作成"
 git push
 ```
 
@@ -1379,3 +1381,117 @@ git push
 - `Jazzy` の `free_fleet` や関連確認は Docker コンテナ内ターミナルで動かす
 - 同じターミナルで `Humble` と `Jazzy` を混ぜて `source` しない
 - `VSCode` も `Humble` 用と `Jazzy` 用で別ウィンドウに分ける
+
+## 27. PC側: robot2 の新しい地図を作る
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_slam.sh
+```
+
+別端末でキーボード操作する:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args -r cmd_vel:=/robot2/cmd_vel
+```
+
+注意:
+
+- `SLAM` 中は `localization` と `Nav2` を同時に起動しない
+- 起動直後に `Message Filter dropping message ... queue is full` が数秒出るのは珍しくない
+
+## 28. PC側: 作った地図を保存する
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+mkdir -p ~/maps
+ros2 run nav2_map_server map_saver_cli \
+  -f ~/maps/robot2_map \
+  --ros-args -r map:=/robot2/map
+```
+
+## 29. PC側: 保存した地図で localization を起動する
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 launch tb4_square robot2_localization_compat.launch.py \
+  map:=$HOME/maps/robot2_map.yaml
+```
+
+## 30. PC側: localization / Nav2 用 RViz
+
+`SLAM` 用と違って、`localization` / `Nav2` 段階では `tf_topic:=/robot2/tf_nav` を使う。
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 launch tb4_square robot2_rviz.launch.py \
+  rviz_config:=$(ros2 pkg prefix tb4_square --share)/rviz/robot2_slam.rviz \
+  use_sim_time:=false \
+  tf_topic:=/robot2/tf_nav
+```
+
+## 31. PC側: initial pose を入れる
+
+基本は `RViz` の `2D Pose Estimate` を使う。
+
+- `Fixed Frame` を `map` にする
+- 地図上の実機位置をクリックする
+- ドラッグで実機の向きを合わせる
+
+CLI で入れるとき:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+timeout 3 ros2 topic pub /robot2/initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+"{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.068]}}" \
+--rate 5 \
+--qos-reliability best_effort
+```
+
+## 32. PC側: Nav2 を起動する
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 launch tb4_square robot2_nav2_compat.launch.py
+```
+
+確認:
+
+```bash
+source ~/turtlebot4_ws/scripts/robot2_env.bash
+ros2 action list | grep /robot2/navigate_to_pose
+```
+
+## 33. PC側: direct goal で動作確認する
+
+RViz の `2D Goal Pose` でもよいし、CLI なら次:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 action send_goal /robot2/navigate_to_pose nav2_msgs/action/NavigateToPose \
+"{pose: {header: {frame_id: map}, pose: {position: {x: 1.0, y: 0.5, z: 0.0}, orientation: {w: 1.0}}}}"
+```
+
+## 34. RMF へ渡す前の最低確認
+
+```bash
+source ~/turtlebot4_ws/scripts/robot2_env.bash
+timeout 5 ros2 topic echo /robot2/amcl_pose --once
+timeout 5 ros2 topic echo /robot2/map --once
+ros2 action list | grep /robot2/navigate_to_pose
+```
+
+ここまで通ったら、`~/fleet_adapter_template_tb4_ws` の
+`scripts/run_direct_schedule.sh`、
+`scripts/run_direct_adapter.sh`、
+`scripts/run_direct_dispatch_go_to_place.sh`
+で RMF から実機を動かす段階に入れる。
