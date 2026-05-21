@@ -53,6 +53,34 @@ Visualization Manager:
         Value: /robot2/scan
       Use Fixed Frame: true
       Value: true
+    - Class: rviz_default_plugins/Map
+      Alpha: 0.7
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Global Costmap
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot2/global_costmap/costmap
+      Use Timestamp: false
+      Value: true
+    - Class: rviz_default_plugins/Map
+      Alpha: 0.6
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Local Costmap
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot2/local_costmap/costmap
+      Use Timestamp: false
+      Value: true
     - Class: rviz_default_plugins/Odometry
       Enabled: true
       Keep: 1
@@ -90,7 +118,38 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /robot2/path
+        Value: /robot2/plan
+      Value: true
+    - Class: rviz_default_plugins/Pose
+      Alpha: 1
+      Arrow Color: 255; 255; 0
+      Axes Length: 0.3
+      Axes Radius: 0.03
+      Enabled: true
+      Head Length: 0.1
+      Head Radius: 0.05
+      Name: Goal Pose
+      Shaft Length: 0.2
+      Shaft Radius: 0.02
+      Shape: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot2/goal_pose
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Nav Graph Markers
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /tb4/nav_graph_markers
       Value: true
   Enabled: true
   Global Options:

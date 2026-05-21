@@ -187,7 +187,7 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    pkg_turtlebot4_navigation = get_package_share_directory("turtlebot4_navigation")
+    pkg_tb4_square = get_package_share_directory("tb4_square")
 
     ld = LaunchDescription()
     ld.add_action(SetEnvironmentVariable("RCUTILS_LOGGING_BUFFERED_STREAM", "1"))
@@ -202,7 +202,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "params_file",
             default_value=PathJoinSubstitution(
-                [pkg_turtlebot4_navigation, "config", "nav2.yaml"]
+                [pkg_tb4_square, "config", "robot2_nav2.yaml"]
             ),
             description="Full path to the Nav2 parameters file",
         )
