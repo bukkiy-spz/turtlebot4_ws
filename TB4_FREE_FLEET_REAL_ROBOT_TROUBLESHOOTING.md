@@ -251,3 +251,116 @@ python3 ~/fleet_adapter_template_tb4_ws/scripts/plot_tb4_map_navgraph.py --use-r
 - 次タスク開始時も charger 系を意識した経路に見えることがある
 
 これは Nav2 単体の故障ではなく、RMF 設定と adapter 実装の組み合わせによる既知挙動。
+
+## 15. rmf-web の System Overview にロボットが出ない
+
+まず API 側でロボットと地図が取得できるか確認する。
+
+```bash
+curl -sS http://localhost:8000/fleets
+curl -sS http://localhost:8000/building_map
+```
+
+見えないときの対処:
+
+1. `rmf_main_ws` の stack を再起動する
+2. ブラウザを再読み込みする
+3. `adapter` が落ちていないか確認する
+
+```bash
+cd ~/rmf_main_ws
+./scripts/rmf_web_stack_status.sh
+./scripts/rmf_web_stack_down.sh
+./scripts/rmf_web_stack_up.sh
+```
+
+## 16. `Failed to create task: Request failed with status code 500`
+
+主な原因:
+
+- `dispatcher` が起動していない
+- `adapter` が停止している
+- `api` が異常終了している
+
+確認:
+
+```bash
+cd ~/rmf_main_ws
+./scripts/rmf_web_stack_status.sh
+tail -n 120 log/rmf_web_stack/api.log
+tail -n 120 log/rmf_web_stack/dispatcher.log
+```
+
+`dispatcher` を必ず含めて起動し直す:
+
+```bash
+cd ~/rmf_main_ws
+./scripts/rmf_web_stack_down.sh
+./scripts/rmf_web_stack_up.sh
+```
+
+## 17. adapter が `waiting for RMF schedule node discovery...` のまま進まない
+
+原因:
+
+- schedule が未起動
+- schedule 起動直後で discovery が終わっていない
+
+対処:
+
+1. `schedule` を先に起動する
+2. 10-30秒程度待って再確認する
+3. adapter を起動し直す
+
+```bash
+cd ~/rmf_main_ws
+./scripts/rmf_web_stack_status.sh
+```
+
+adapter 単体起動時:
+
+```bash
+cd ~/fleet_adapter_template_tb4_ws
+./scripts/run_direct_adapter.sh -s http://localhost:8000/_internal
+```
+
+## 18. `Charge Battery` が `standby` のまま進まない
+
+まず `battery` が `recharge_soc` 未満か確認する。
+
+```bash
+curl -sS http://localhost:8000/fleets
+```
+
+現在設定:
+
+- `recharge_threshold: 0.15`
+- `recharge_soc: 0.2`
+
+意味:
+
+- 20% 未満なら充電タスクが優先される
+- 20% を超えるまで通常の移動タスクは進みにくい
+
+補足:
+
+- ログに `waiting to charge to 20.0%` が出るのは想定内
+- SOC が上がらないときは充電ドック接触を確認する
+
+## 19. `Charge... completed` が大量に出て操作しづらい
+
+意味:
+
+- 充電タスクの履歴が連続で生成される状態
+- 20% 境界付近や charging 判定の揺れで発生しやすい
+
+対処:
+
+1. `recharge_threshold < recharge_soc` にする
+2. 実機バッテリーを 20%以上まで安定充電する
+3. 必要なら stack 再起動で状態を整理する
+
+```bash
+rg -n "recharge_threshold|recharge_soc" \
+  ~/fleet_adapter_template_tb4_ws/src/tb4_fleet_adapter/config.yaml
+```

@@ -306,8 +306,7 @@ python3 ~/fleet_adapter_template_tb4_ws/scripts/sync_robot_map_to_rmf.py --also-
 python3 ~/fleet_adapter_template_tb4_ws/scripts/plot_tb4_map_navgraph.py \
   --use-robot-frame \
   --topic /robot2/amcl_pose \
-  --save ~/obs_recording/tb4_20260521_overlay_robot_frame_latest.pngcd ~/fleet_adapter_template_tb4_ws
-./scripts/run_direct_schedule.sh
+  --save ~/obs_recording/tb4_20260521_overlay_robot_frame_latest.png
 ```
 
 RViz で waypoint / charger / lane を表示:
@@ -402,4 +401,62 @@ source scripts/robot2_env.bash
 ros2 topic list | rg '^/robot2/(amcl_pose|map|tf_nav|battery_state)$'
 ros2 action list | grep /robot2/navigate_to_pose
 timeout 5 ros2 topic echo /robot2/amcl_pose --once
+```
+
+## 18. rmf-web 一括起動と疎通確認
+
+推奨:
+
+- `schedule`/`dispatcher`/`adapter`/`api`/`dashboard` は `rmf_main_ws` の stack script で一括管理する
+- adapter 単体起動時は `-s http://localhost:8000/_internal` を付ける
+
+```bash
+cd ~/rmf_main_ws
+./scripts/rmf_web_stack_up.sh
+./scripts/rmf_web_stack_status.sh
+```
+
+表示確認:
+
+```bash
+curl -sS http://localhost:8000/fleets
+curl -sS http://localhost:8000/building_map
+curl -sS "http://localhost:8000/tasks?limit=10"
+```
+
+停止:
+
+```bash
+cd ~/rmf_main_ws
+./scripts/rmf_web_stack_down.sh
+```
+
+adapter 単体再起動が必要なとき:
+
+```bash
+pkill -INT -f "tb4_fleet_adapter/fleet_adapter -c" || true
+cd ~/fleet_adapter_template_tb4_ws
+./scripts/run_direct_adapter.sh -s http://localhost:8000/_internal
+```
+
+## 19. 充電しきい値の安定化設定
+
+`Charge Battery` が 20% 境界で頻発しないよう、しきい値に差をつける。
+
+- `recharge_threshold: 0.15`
+- `recharge_soc: 0.2`
+
+確認:
+
+```bash
+rg -n "recharge_threshold|recharge_soc" \
+  ~/fleet_adapter_template_tb4_ws/src/tb4_fleet_adapter/config.yaml
+```
+
+反映:
+
+```bash
+cd ~/rmf_main_ws
+./scripts/rmf_web_stack_down.sh
+./scripts/rmf_web_stack_up.sh
 ```
