@@ -2,6 +2,135 @@
 
 このファイルは、`turtlebot4_ws` から `robot2` 実機を `SLAM -> localization -> Nav2 -> RMF接続 -> dispatch確認` まで通すための本線手順です。  
 現在の実マップは `tb4_20260521`、RMF 側の nav graph は `~/rmf_main_ws/maps/tb4_rebuild_20260521/nav_graphs/0.yaml` を使います。
+※turtlebot4_wsのCOMMANDS.mdの#10までやってから以下を進めること(以下に#10までを載せています)
+
+# TurtleBot4 コマンドメモ
+
+このファイルは、`TurtleBot4` 実機や `Gazebo / Ignition` シミュレーションを動かすときのメモです。  
+「どちらの端末で打つか」が分かるように、`PC側` と `実機側` を分けてあります。
+
+## 0. まず確認すること
+
+- `VSCode Remote-SSH` で開いたターミナル:
+  基本的に `実機側`
+- 普通の端末アプリで開いたローカル端末:
+  `PC側`
+- 今後のおすすめ運用:
+  `Humble` 用と `Jazzy` 用で `VSCode` のウィンドウ自体を分ける
+- 迷ったら次で確認
+
+```bash
+hostname
+whoami
+pwd
+```
+
+`VSCode` を分ける例:
+
+- `Humble` 用ウィンドウ:
+  `~/turtlebot4_ws` を開く
+- `Jazzy/free_fleet` 用ウィンドウ:
+  Docker コンテナに接続して `~/jazzy_ff_ws` を開く
+
+このやり方だと、どちらの `ROS` を使っているか視覚的に分かりやすく、`source /opt/ros/humble/setup.bash` と `source /opt/ros/jazzy/setup.bash` を混ぜにくいです。
+
+## 1. PC側: 実機に SSH 接続する
+
+```bash
+ssh ubuntu@192.168.11.22
+```
+
+## 2. PC側: 実機に届くか確認する
+
+```bash
+ping 192.168.11.22
+```
+
+## 3. 実機側: IP アドレスを確認する
+
+```bash
+hostname -I
+ip addr
+```
+
+## 4. 実機側: TurtleBot4 の ROS 環境を読み込む
+
+```bash
+turtlebot4-source
+echo $ROS_DOMAIN_ID
+echo $RMW_IMPLEMENTATION
+echo $ROS_DISCOVERY_SERVER
+```
+
+## 5. 実機側: ROS デーモンを更新する
+
+```bash
+turtlebot4-source
+turtlebot4-daemon-restart
+```
+
+## 6. 実機側: 実機の主要トピックを確認する
+
+```bash
+ros2 topic list | head
+ros2 topic list | grep robot2
+ros2 topic list | grep cmd_vel
+ros2 topic list | grep tf
+```
+
+## `cmd_vel` がなければ再起動
+
+```bash
+sudo reboot
+```
+
+## 7. PC側: ROS 通信設定を入れる
+
+毎回新しい PC 側ターミナルを開いたら、まずこれを実行します。
+実機側で `ROS_DISCOVERY_SERVER=127.0.0.1:11811;` と出る場合でも、PC側では `127.0.0.1` ではなく実機のIPアドレスを指定します。
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 daemon stop
+ros2 daemon start
+```
+
+設定が入っているか確認するには次を使います。
+
+```bash
+echo $ROS_DOMAIN_ID
+echo $RMW_IMPLEMENTATION
+echo $ROS_DISCOVERY_SERVER
+```
+
+## 8. PC側: 実機のトピックが見えているか確認する
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 topic list | grep robot2
+ros2 topic list | grep cmd_vel
+ros2 topic list | grep tf
+```
+
+## 9. PC側: ワークスペースの基本セットアップ
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+```
+
+## 10. PC側: パッケージをビルドし直す
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select tb4_square
+source install/setup.bash
+```
+
 
 ## 1. Host 側 robot2 環境
 
@@ -137,6 +266,7 @@ ros2 launch tb4_square robot2_nav2_compat.launch.py \
 ```
 
 まずは既定ファイルを直接調整して、変更後に launch を再起動して挙動を見るのが一番追いやすい。
+Lifecycle bringup completed.とログの最後に出ていれば起動OK．
 
 確認:
 
@@ -176,7 +306,8 @@ python3 ~/fleet_adapter_template_tb4_ws/scripts/sync_robot_map_to_rmf.py --also-
 python3 ~/fleet_adapter_template_tb4_ws/scripts/plot_tb4_map_navgraph.py \
   --use-robot-frame \
   --topic /robot2/amcl_pose \
-  --save ~/obs_recording/tb4_20260521_overlay_robot_frame_latest.png
+  --save ~/obs_recording/tb4_20260521_overlay_robot_frame_latest.pngcd ~/fleet_adapter_template_tb4_ws
+./scripts/run_direct_schedule.sh
 ```
 
 RViz で waypoint / charger / lane を表示:

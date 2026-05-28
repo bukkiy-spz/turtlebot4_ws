@@ -25,13 +25,15 @@ class TfFilterRepublisher(Node):
         sub_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=100,
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            # Nav2 の transform listener は /tf 相当を RELIABLE で購読するため、
+            # ここも合わせておかないと filtered TF を受け取れない。
+            reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
         )
         pub_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=100,
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.VOLATILE,
         )
 

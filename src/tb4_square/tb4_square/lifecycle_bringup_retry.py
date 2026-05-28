@@ -140,6 +140,7 @@ class LifecycleBringupRetry(Node):
     ) -> bool:
         service_name = self.scoped_service_name(node_name, "change_state")
         client = self.create_client(ChangeState, service_name)
+        target_state = self.target_state_for_transition(transition_id)
         for attempt in range(1, self.retry_count + 1):
             if not client.wait_for_service(timeout_sec=self.service_wait_sec):
                 self.get_logger().warn(
@@ -163,6 +164,16 @@ class LifecycleBringupRetry(Node):
                 )
                 return True
 
+            if target_state is not None:
+                current_state = self.get_current_state(node_name)
+                if current_state == target_state:
+                    self.get_logger().info(
+                        f"{node_name} reached target state {target_state} "
+                        f"despite delayed {transition_name} response "
+                        f"(attempt {attempt}/{self.retry_count})."
+                    )
+                    return True
+
             self.get_logger().warn(
                 f"{node_name} {transition_name} did not complete "
                 f"(attempt {attempt}/{self.retry_count})."
@@ -181,6 +192,13 @@ class LifecycleBringupRetry(Node):
                 return True
             time.sleep(0.05)
         return future.done()
+
+    def target_state_for_transition(self, transition_id: int) -> int | None:
+        if transition_id == Transition.TRANSITION_CONFIGURE:
+            return State.PRIMARY_STATE_INACTIVE
+        if transition_id == Transition.TRANSITION_ACTIVATE:
+            return State.PRIMARY_STATE_ACTIVE
+        return None
 
 
 def main(args=None) -> None:

@@ -221,6 +221,8 @@ local_costmap:
           obstacle_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
+        # 名前空間付き環境で map topic 解決が揺れないように明示する。
+        map_topic: /robot2/map
         map_subscribe_transient_local: True
       always_send_full_costmap: True
 
@@ -236,7 +238,14 @@ global_costmap:
       # まずは実機の物理サイズを表す値はそのままにする。
       # 安全距離は inflation_radius 側で調整し、ここは最後に触る。
       robot_radius: 0.175
-      resolution: 0.06
+      # map 受信前の暫定 geometry。loaded map が届けば static layer 側で上書きされる。
+      # Nav2 Humble では width / height が整数パラメータとして宣言されるため、
+      # ここでは実地図を含む少し大きめの整数値にしておく。
+      resolution: 0.05
+      width: 5
+      height: 4
+      origin_x: -3.71
+      origin_y: -2.01
       # 未観測領域を unknown として扱う。
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
@@ -258,6 +267,8 @@ global_costmap:
           obstacle_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
+        # 名前空間付き環境で map topic 解決が揺れないように明示する。
+        map_topic: /robot2/map
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
