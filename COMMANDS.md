@@ -1,0 +1,1497 @@
+# TurtleBot4 コマンドメモ
+
+このファイルは、`TurtleBot4` 実機や `Gazebo / Ignition` シミュレーションを動かすときのメモです。  
+「どちらの端末で打つか」が分かるように、`PC側` と `実機側` を分けてあります。
+
+## 0. まず確認すること
+
+- `VSCode Remote-SSH` で開いたターミナル:
+  基本的に `実機側`
+- 普通の端末アプリで開いたローカル端末:
+  `PC側`
+- 今後のおすすめ運用:
+  `Humble` 用と `Jazzy` 用で `VSCode` のウィンドウ自体を分ける
+- 迷ったら次で確認
+
+```bash
+hostname
+whoami
+pwd
+```
+
+`VSCode` を分ける例:
+
+- `Humble` 用ウィンドウ:
+  `~/turtlebot4_ws` を開く
+- `Jazzy/free_fleet` 用ウィンドウ:
+  Docker コンテナに接続して `~/jazzy_ff_ws` を開く
+
+このやり方だと、どちらの `ROS` を使っているか視覚的に分かりやすく、`source /opt/ros/humble/setup.bash` と `source /opt/ros/jazzy/setup.bash` を混ぜにくいです。
+
+## 1. PC側: 実機に SSH 接続する
+
+```bash
+ssh ubuntu@192.168.11.22
+```
+
+## 2. PC側: 実機に届くか確認する
+
+```bash
+ping 192.168.11.22
+```
+
+## 3. 実機側: IP アドレスを確認する
+
+```bash
+hostname -I
+ip addr
+```
+
+## 4. 実機側: TurtleBot4 の ROS 環境を読み込む
+
+```bash
+turtlebot4-source
+echo $ROS_DOMAIN_ID
+echo $RMW_IMPLEMENTATION
+echo $ROS_DISCOVERY_SERVER
+```
+
+## 5. 実機側: ROS デーモンを更新する
+
+```bash
+turtlebot4-source
+turtlebot4-daemon-restart
+```
+
+## 6. 実機側: 実機の主要トピックを確認する
+
+```bash
+ros2 topic list | head
+ros2 topic list | grep robot2
+ros2 topic list | grep cmd_vel
+ros2 topic list | grep tf
+```
+
+## `cmd_vel` がなければ再起動
+
+```bash
+sudo reboot
+```
+
+## 7. PC側: ROS 通信設定を入れる
+
+毎回新しい PC 側ターミナルを開いたら、まずこれを実行します。
+実機側で `ROS_DISCOVERY_SERVER=127.0.0.1:11811;` と出る場合でも、PC側では `127.0.0.1` ではなく実機のIPアドレスを指定します。
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 daemon stop
+ros2 daemon start
+```
+
+設定が入っているか確認するには次を使います。
+
+```bash
+echo $ROS_DOMAIN_ID
+echo $RMW_IMPLEMENTATION
+echo $ROS_DISCOVERY_SERVER
+```
+
+## 8. PC側: 実機のトピックが見えているか確認する
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 topic list | grep robot2
+ros2 topic list | grep cmd_vel
+ros2 topic list | grep tf
+```
+
+## 9. PC側: ワークスペースの基本セットアップ
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+```
+
+## 10. PC側: パッケージをビルドし直す
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select tb4_square
+source install/setup.bash
+```
+
+## 10-1. PC側: Gazebo シミュレーションを安全に起動する
+
+シミュレーションは、`build` と `source` をやり直してから起動したほうが、古い launch や古い Python コードを拾いにくくて安全です。  
+前のシミュレーションが起動したままなら、先にその端末で `Ctrl+C` して止めてから実行します。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select tb4_square
+source ~/turtlebot4_ws/install/setup.bash
+# 実機接続用の discovery 設定が残っていると Gazebo 内の spawn が止まるので解除する
+unset ROS_DISCOVERY_SERVER
+ros2 daemon stop
+ros2 launch tb4_square turtlebot4_sim.launch.py
+```
+
+ログだけ見たいときは、`RViz` を切って起動してもよいです。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source ~/turtlebot4_ws/install/setup.bash
+ros2 daemon stop
+ros2 launch tb4_square turtlebot4_sim.launch.py rviz:=false
+```
+
+## 10-2. PC側: 倉庫だけ見えてロボットが出ないときの確認
+
+倉庫環境だけ表示されてロボットが見えないときは、`robot_description` や `robot_state_publisher` が正しく立ち上がっているかを確認します。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source ~/turtlebot4_ws/install/setup.bash
+ros2 node list | grep robot_state_publisher
+ros2 topic list | grep robot_description
+ros2 service list | grep robot_state_publisher
+```
+
+特に次のどれかが出ないときは、いったん `Ctrl+C` で止めてから `10-1` の手順で再起動します。
+無反応
+- `robot_state_publisher`
+- `robot_description`
+- `robot_state_publisher/get_parameters`
+
+## 10-3. PC側: Gazebo や controller の古いプロセスが残っていないか確認する
+
+Teleop が効かない、ロボット表示が崩れる、`/controller_manager` や `/gz_ros2_control` が重複する、といったときは、前回のシミュレーションが裏で残っていることがあります。  
+まずは「何が残っているか」を確認します。
+
+```bash
+ps -ef | rg "ign gazebo|ros2 launch tb4_square turtlebot4_sim.launch.py|controller_manager|gz_ros2_control"
+```
+
+ROS グラフ上で同名ノードが重複していないかも見ておくと切り分けが早いです。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source ~/turtlebot4_ws/install/setup.bash
+unset ROS_DISCOVERY_SERVER
+ros2 node list | sort | uniq -c | sort -nr | head -n 20
+```
+
+特に `2 /controller_manager` や `2 /gz_ros2_control` のように同じ名前が複数出るときは、古いシミュレーションが残っている可能性が高いです。
+
+まずは、シミュレーションを起動した端末で `Ctrl+C` を押して止めます。  
+それでも残る場合は、次のように `SIGINT` でやさしく止めます。
+
+```bash
+pkill -INT -f "ros2 launch tb4_square turtlebot4_sim.launch.py" || true
+pkill -INT -f "ign gazebo" || true
+sleep 2
+ps -ef | rg "ign gazebo|controller_manager|gz_ros2_control"
+```
+
+それでも残る場合だけ、`TERM` で終了させます。
+
+```bash
+pkill -TERM -f "ros2 launch tb4_square turtlebot4_sim.launch.py" || true
+pkill -TERM -f "ign gazebo" || true
+sleep 2
+ros2 daemon stop
+```
+
+止め終わったら、改めて `10-1` の手順でシミュレーションを 1 回だけ起動します。
+
+## 11. PC側: RViz を起動する
+
+`robot2` 用の設定済み RViz を起動します。  
+`/robot2/tf` や `/robot2/tf_static` のリマップも自動で入ります。
+
+実機表示では `./scripts/robot2_rviz.sh --robot` を使うのが基本です。  
+現在の既定設定では、`wheel_tf_publisher` と `odom_tf_publisher` の補助 TF は自動起動しません。  
+実機側の TF と stamp をそのまま使うことで、`TF_OLD_DATA` を起こしにくくしています。  
+また RViz の初期 `Fixed Frame` は `base_link` です。実機時計がずれて `scan` の timestamp が古いときでも、
+`odom` 固定より表示が崩れにくいためです。
+
+`robot2_rviz.sh` は既定で自動判定です。  
+実機 topic が見えれば robot モード、見えなければ sim モードへ切り替わります。  
+固定したい場合だけ `--robot` または `--sim` を付けます。
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_rviz.sh --robot
+```
+
+wheel TF や odom TF が本当に欠けている環境でだけ、補助ノードを明示的に有効化します。
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_rviz.sh --robot enable_wheel_tf_helper:=true
+./scripts/robot2_rviz.sh --robot enable_odom_tf_helper:=true
+```
+
+## 12. PC側: 実機に正方形走行を指示する
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_square.sh
+```
+
+`./scripts/robot2_square.sh` は内部で `source /opt/ros/humble/setup.bash` と
+`source install/setup.bash` を読み込みます。  
+そのため、新しいターミナルからでもこの 1 行だけで実行できます。
+
+`./scripts/robot2_square.sh` は、まず `cmd_vel` 系 topic を確認して、使えるならそこへ流します。  
+`cmd_vel` が見えているのに subscriber が 0 の環境でも、そのまま `cmd_vel` を流します。  
+この構成では DDS graph introspection が実 subscriber を拾えないことがあるためです。  
+その場合の publisher QoS は `reliable` を優先します。  
+`reliable` publisher は `reliable` / `best_effort` のどちらの subscriber とも互換があるためです。  
+`cmd_vel` が見えない場合だけ、`/robot2/drive_distance` と `/robot2/rotate_angle` を使う action モードを試します。  
+`/robot2/velocity_smoother` が動いているときは、`/robot2/cmd_vel_nav` を自動で選んでそこへ流します。
+
+手早く状態確認したいとき:
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_status.sh
+```
+
+通常は `ros2 topic info -v /robot2/cmd_vel` で subscriber が見えてから実行します。  
+Nav2 の `velocity_smoothercd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/robot2/cmd_vel` を使っている場合は、`robot2_square.sh` が `/robot2/cmd_vel_nav` を自動で選びます。
+`create3_repub` が見えない構成でも、`/robot2/cmd_vel` 自体が見えていればそのまま走行を続けます。
+
+## 13. PC側: 正方形走行のパラメータを変える
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_square.sh \
+  side_length:=0.3 \
+  linear_speed:=0.08 \
+  angular_speed:=0.5 \
+  pause_time:=0.3
+```
+
+## 14. PC側: キーボードで実機を操作する
+
+まず `teleop_twist_keyboard` が入っていない場合はインストールします。
+
+```bash
+sudo apt install ros-humble-teleop-twist-keyboard
+```
+
+実機をキーボードで動かすときは次を使います。
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/robot2/cmd_vel
+```
+
+よく使うキー:
+
+- `i`: 前進
+- `,`: 後退
+- `j`: 左回転
+- `l`: 右回転
+- `k`: 停止
+
+## 15. PC側: RViz 表示用のトピックを確認する
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+date +%s
+ros2 topic echo /robot2/robot_description --once
+ros2 topic echo /robot2/tf --once
+ros2 topic echo /robot2/tf_static --once
+ros2 topic echo /robot2/odom --once
+ros2 topic echo /robot2/scan --once | sed -n '1,8p'
+```
+
+`/robot2/scan` の `header.stamp.sec` は、直前の `date +%s` に近い値である必要があります。  
+ここが大きくずれている場合、RViz で LaserScan が表示されないことがあります。
+
+## 16. このプロジェクトでよく使うトピック
+
+- `/robot2/cmd_vel`
+  実機へ速度指令を送るトピック
+- `/robot2/robot_description`
+  `RViz` でロボットモデルを表示するためのトピック
+- `/robot2/scan`
+  `LiDAR` の表示用トピック
+- `/robot2/odom`
+  オドメトリ表示用トピック
+- `/robot2/tf`
+  動的な座標変換
+- `/robot2/tf_static`
+  静的な座標変換
+- `/robot2/path`
+  `RViz` で軌跡を線として表示するためのトピック
+
+## 17. 実際によく使う流れ
+
+### 1. 実機側で実行
+
+```bash
+turtlebot4-source
+date +%s
+turtlebot4-daemon-restart
+ros2 topic list | grep robot2
+```
+
+### 2. PC側で通信設定を入れる
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 daemon stop
+ros2 daemon start
+ros2 topic list | grep robot2
+```
+
+### 3. PC側で RViz を開く
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_rviz.sh
+```
+
+## 17-1. 2026-05-12 時点の実機 Nav2 立ち上げ確定手順
+
+今回最終的に安定したのは、次の前提です。
+
+- PC: `192.168.11.1`
+- `turtlebot4-2` Wi-Fi: `192.168.11.22`
+- `turtlebot4-2` USB: `192.168.186.3`
+- Create 3: `192.168.186.2`
+- `localization` と `Nav2` は `PC側` ではなく `実機側` で起動する
+
+### A. まず時刻を確認する
+
+PC側:
+
+```bash
+date
+chronyc tracking
+```
+
+実機側:
+
+```bash
+date
+chronyc tracking
+curl -I http://192.168.186.2
+```
+
+ここで全部が現在時刻付近でそろっていることが前提です。  
+`506 Cannot talk to daemon` が出るときは `chronyd` が止まっています。
+
+### B. 実機側の ROS ノードを時刻修正後に再起動する
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+turtlebot4-daemon-restart
+sleep 10
+timeout 5 ros2 topic echo /robot2/scan --once
+timeout 5 ros2 topic echo /robot2/tf --once
+timeout 5 ros2 topic echo /robot2/odom --once
+```
+
+`header.stamp.sec` が現在時刻の epoch 秒付近まで来ていることを確認します。  
+ここが古いままだと `TF_OLD_DATA` と `AMCL` の `Message Filter dropping message` が続きます。
+
+### C. PC側の接続環境を入れ直す
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source scripts/robot2_env.bash
+source install/setup.bash
+ros2 daemon stop
+ros2 daemon start
+```
+
+### D. Localization は実機側で起動する
+
+実機側:
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+ros2 daemon stop
+ros2 daemon start
+ros2 launch turtlebot4_navigation localization.launch.py \
+  namespace:=robot2 \
+  use_sim_time:=false \
+  map:=/opt/ros/humble/share/turtlebot4_navigation/maps/depot.yaml
+```
+
+### E. Initial Pose は必要なら実機側から直接入れる
+
+まず `amcl` と subscriber を確認します。
+
+```bash
+ros2 lifecycle get /robot2/amcl
+ros2 topic info -v /robot2/initialpose
+```
+
+投入:
+
+```bash
+timeout 3 ros2 topic pub /robot2/initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+"{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: -0.1, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.068]}}" \
+--rate 5 \
+--qos-reliability best_effort
+```
+
+補足:
+
+- `-1` の単発 publish で取りこぼすときは、この `timeout 3` の連続 publish 版の方が安定
+- 送信後に実機を少し動かすか、その場回転すると `amcl_pose` が出やすい
+
+確認:
+
+```bash
+timeout 5 ros2 topic echo /robot2/amcl_pose --once
+timeout 5 ros2 run tf2_ros tf2_echo map odom --ros-args -r /tf:=/robot2/tf -r /tf_static:=/robot2/tf_static
+```
+
+`amcl_pose` が出て、`map -> odom` が見えれば localization は成功です。
+
+### F. Nav2 も実機側で起動する
+
+実機側:
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+ros2 launch turtlebot4_navigation nav2.launch.py \
+  namespace:=robot2 \
+  use_sim_time:=false
+```
+
+PC側で確認:
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source scripts/robot2_env.bash
+source install/setup.bash
+ros2 action list | grep navigate_to_pose
+ros2 node list | grep -E '/robot2/(controller_server|planner_server|bt_navigator|waypoint_follower|velocity_smoother|behavior_server|smoother_server)'
+```
+
+`/robot2/navigate_to_pose` が見えれば、実機 `Nav2` は立っています。
+
+### G. 詰まったときの最短確認
+
+時刻:
+
+```bash
+date
+chronyc tracking
+curl -I http://192.168.186.2
+```
+
+実機 topic:
+
+```bash
+timeout 5 ros2 topic echo /robot2/scan --once
+timeout 5 ros2 topic echo /robot2/tf --once
+timeout 5 ros2 topic echo /robot2/odom --once
+```
+
+localization:
+
+```bash
+ros2 lifecycle get /robot2/map_server
+ros2 lifecycle get /robot2/amcl
+timeout 5 ros2 topic echo /robot2/amcl_pose --once
+timeout 5 ros2 run tf2_ros tf2_echo map odom --ros-args -r /tf:=/robot2/tf -r /tf_static:=/robot2/tf_static
+```
+
+Nav2:
+
+```bash
+ros2 action list | grep navigate_to_pose
+ros2 node list | grep -E '/robot2/(controller_server|planner_server|bt_navigator)'
+```
+
+## 17-2. 次回用: Nav2 起動の最短チェック手順
+
+時刻同期が正常なときは、この順で確認すると早いです。
+
+### 1. PC側: 上流 NTP が生きているか
+
+```bash
+chronyc tracking
+date
+```
+
+期待する状態:
+
+- `Reference ID` に `ntp-a*.nict.go.jp` など NICT 系が出る
+- `Leap status : Normal`
+
+### 2. 実機側: PC 経由の同期が生きているか
+
+```bash
+chronyc tracking
+date
+curl -I http://192.168.186.2
+```
+
+期待する状態:
+
+- `Reference ID : C0A80B01 (192.168.11.1)` のように PC を見ている
+- `date` が現在時刻
+- `curl -I` の `Date:` も現在時刻相当
+
+補足:
+
+- `curl -I` の `Date:` は `GMT/UTC` 表示なので、JST より 9 時間小さく見えて正常
+
+### 3. 実機側: ROS ノードを時刻修正後に再起動する
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+turtlebot4-daemon-restart
+sleep 10
+timeout 5 ros2 topic echo /robot2/scan --once
+timeout 5 ros2 topic echo /robot2/tf --once
+timeout 5 ros2 topic echo /robot2/odom --once
+```
+
+期待する状態:
+
+- `scan` / `tf` / `odom` の `header.stamp.sec` が現在の epoch 秒付近
+
+### 4. PC側: discovery 環境を入れ直す
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source scripts/robot2_env.bash
+source install/setup.bash
+ros2 daemon stop
+ros2 daemon start
+```
+
+### 5. 実機側: Localization を起動する
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+ros2 daemon stop
+ros2 daemon start
+ros2 launch turtlebot4_navigation localization.launch.py \
+  namespace:=robot2 \
+  use_sim_time:=false \
+  map:=/opt/ros/humble/share/turtlebot4_navigation/maps/depot.yaml
+```
+
+### 6. 実機側: Initial Pose を入れる
+
+```bash
+timeout 3 ros2 topic pub /robot2/initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+"{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: -0.1, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.068]}}" \
+--rate 5 \
+--qos-reliability best_effort
+```
+
+確認:
+
+```bash
+timeout 5 ros2 topic echo /robot2/amcl_pose --once
+timeout 5 ros2 run tf2_ros tf2_echo map odom --ros-args -r /tf:=/robot2/tf -r /tf_static:=/robot2/tf_static
+```
+
+期待する状態:
+
+- `amcl_pose` が返る
+- `map -> odom` が見える
+
+### 7. 実機側: Nav2 を起動する
+
+```bash
+source /opt/ros/humble/setup.bash
+turtlebot4-source
+ros2 launch turtlebot4_navigation nav2.launch.py \
+  namespace:=robot2 \
+  use_sim_time:=false
+```
+
+### 8. PC側: Nav2 が立ったか確認する
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source scripts/robot2_env.bash
+source install/setup.bash
+ros2 action list | grep navigate_to_pose
+ros2 node list | grep -E '/robot2/(controller_server|planner_server|bt_navigator|waypoint_follower|velocity_smoother|behavior_server|smoother_server)'
+```
+
+期待する状態:
+
+- `/robot2/navigate_to_pose` が見える
+
+### 9. ここで詰まったときの見る順番
+
+1. `chronyc tracking`
+2. `curl -I http://192.168.186.2`
+3. `/robot2/scan`, `/robot2/tf`, `/robot2/odom` の stamp
+4. `/robot2/amcl_pose`
+5. `tf2_echo map odom`
+6. `/robot2/navigate_to_pose`
+
+## 18. Humble 用と Jazzy/free_fleet 用を分けて運用する
+
+今後の前提は次です。
+
+- ホストPC側:
+  `Humble` で `TurtleBot4` 実機操作やシミュレーションを行う
+- Docker コンテナ側:
+  `Jazzy` で `free_fleet` 関連だけを動かす
+- Git:
+  `Humble` 用と `Jazzy/free_fleet` 用を別リポジトリで管理する
+
+この前提なら、`VSCode` のウィンドウも分けるのが一番わかりやすいです。
+
+### 18-1. フォルダ構成のおすすめ
+
+```text
+~/turtlebot4_ws
+  -> Humble 用
+  -> 実機操作 / シミュレーション用
+  -> Git も Humble 用リポジトリ
+
+~/jazzy_ff_ws
+  -> Jazzy + free_fleet 用
+  -> Docker コンテナからマウントして使う
+  -> Git も Jazzy/free_fleet 用リポジトリ
+```
+
+### 18-2. VSCode のおすすめ運用
+
+- `Humble` 用:
+  ホスト側で `~/turtlebot4_ws` を開いた `VSCode` ウィンドウ
+- `Jazzy/free_fleet` 用:
+  `Dev Containers` か Docker 接続でコンテナに入った `VSCode` ウィンドウ
+
+見分けやすくするコツ:
+
+- `Humble` 側ウィンドウ:
+  ワークスペース名を `turtlebot4_ws (Humble)` と意識する
+- `Jazzy` 側ウィンドウ:
+  ワークスペース名を `jazzy_ff_ws (Jazzy)` と意識する
+- ターミナルを開いたら最初に `pwd` と `printenv ROS_DISTRO` を見る
+
+### 18-3. Humble 側リポジトリの扱い
+
+`Humble` 側は今の `~/turtlebot4_ws` をそのまま使います。  
+実機用コードやシミュレーション用コードはこちらに残します。
+
+確認コマンド:
+
+```bash
+cd ~/turtlebot4_ws
+pwd
+git remote -v
+printenv ROS_DISTRO
+```
+
+保存するとき:
+
+```bash
+cd ~/turtlebot4_ws
+git status
+git add .
+git commit -m "free fleet接続・コマンドリストとトラブルシューティング作成"
+git push
+```
+
+### 18-4. Jazzy/free_fleet 側リポジトリを作る
+
+`Jazzy` 側は `Humble` 側とは別フォルダ、別リポジトリにします。  
+コピーして流用するより、`free_fleet` 用として独立させたほうが今後の整理が楽です。
+
+```bash
+cd ~
+mkdir -p jazzy_ff_ws/src
+cd ~/jazzy_ff_ws
+git init
+```
+
+`.gitignore` の例:
+
+```gitignore
+build/
+install/
+log/
+__pycache__/
+*.pyc
+.vscode/
+```
+
+作成コマンド:
+
+```bash
+cd ~/jazzy_ff_ws
+cat > .gitignore <<'EOF'
+build/
+install/
+log/
+__pycache__/
+*.pyc
+.vscode/
+EOF
+```
+
+### 18-5. Jazzy 側を別リモートへ push できるようにする
+
+GitHub などで `Jazzy/free_fleet` 用の空リポジトリを作ってから、次を実行します。
+
+```bash
+cd ~/jazzy_ff_ws
+git add .
+git commit -m "Initial Jazzy free_fleet workspace"
+git remote add origin <Jazzy用の新しいリポジトリURL>
+git branch -M main
+git push -u origin main
+```
+
+確認コマンド:
+
+```bash
+cd ~/jazzy_ff_ws
+git remote -v
+git status
+```
+
+### 18-6. コンテナ内の変更を Jazzy 側リポジトリへ保存する
+
+大事なのは、Docker コンテナが `~/jazzy_ff_ws` をマウントしていることです。  
+そうすれば、コンテナ内で編集した内容をホスト側でも同じ Git リポジトリとして扱えます。
+
+保存の流れ:
+
+```bash
+cd ~/jazzy_ff_ws
+git status
+git add .
+git commit -m "コミットメッセージを入力"
+git push
+```
+
+### 18-7. どちらに push するか迷ったときの判断基準
+
+- `TurtleBot4` 実機操作、`RViz`、シミュレーション、`Humble` 用コード:
+  `~/turtlebot4_ws`
+- `Dockerfile`、`.devcontainer/`、`free_fleet`、`Jazzy` 専用設定:
+  `~/jazzy_ff_ws`
+
+### 18-8. 混ぜないための確認コマンド
+
+```bash
+pwd
+git remote -v
+printenv ROS_DISTRO
+printenv | grep ROS
+```
+
+### 18-9. いちばん安全な実運用の流れ
+
+1. `Humble` 用はホスト側 `VSCode` ウィンドウで `~/turtlebot4_ws` を開く
+2. `Jazzy/free_fleet` 用はコンテナ側 `VSCode` ウィンドウで `~/jazzy_ff_ws` を開く
+3. `Humble` は `~/turtlebot4_ws` のリポジトリへ push する
+4. `Jazzy/free_fleet` は `~/jazzy_ff_ws` のリポジトリへ push する
+5. 同じターミナルで `Humble` と `Jazzy` を混ぜて `source` しない
+
+### 4. 別の PC 側ターミナルで実機を動かす
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_square.sh
+```
+
+### 5. 別の PC 側ターミナルでキーボード操作する場合
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/robot2/cmd_vel
+```
+
+## 19. よくある確認コマンド
+
+### 実機側で Discovery Server の設定を確認
+
+```bash
+turtlebot4-source
+echo $ROS_DISCOVERY_SERVER
+```
+
+### PC側で実機のトピックが見えないとき
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ping 192.168.188.22
+ros2 daemon stop
+ros2 daemon start
+ros2 topic list | grep robot2
+```
+
+### 実機側では見えるのに PC側で見えないとき
+
+実機側:
+
+```bash
+turtlebot4-source
+echo $ROS_DISCOVERY_SERVER
+ros2 topic list | grep robot2
+```
+
+### `/robot2/cmd_vel` だけ消えたとき
+
+PC側:
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_status.sh
+```
+
+`/robot2/robot_description` は見えるのに `/robot2/cmd_vel` と `/robot2/scan` が来ない場合は、PC 側設定よりも実機側 bringup の不調の可能性が高いです。
+
+実機側:
+
+```bash
+turtlebot4-source
+turtlebot4-daemon-restart
+ros2 topic list | grep cmd_vel
+ros2 node list | grep -E 'create3|repub|twist|mux'
+```
+
+PC側に戻って:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 daemon stop
+ros2 daemon start
+ros2 topic list | grep cmd_vel
+```
+
+PC側:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 daemon stop
+ros2 daemon start
+ros2 topic list | grep robot2
+```
+
+### RViz にロボットが出ないとき
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+date +%s
+ros2 topic echo /robot2/robot_description --once
+ros2 topic info -v /robot2/robot_description
+ros2 topic echo /robot2/tf --once
+ros2 topic echo /robot2/tf_static --once
+ros2 topic echo /robot2/scan --once | sed -n '1,8p'
+```
+
+`RobotModel` が赤エラーになる場合は、RViz の `RobotModel > Description Topic` が次になっているか確認します。
+
+- `Value`: `/robot2/robot_description`
+- `Durability Policy`: `Transient Local`
+- `Fixed Frame`: `base_link`
+
+`left_wheel` などで `No transform from [left_wheel] to [base_link]` が出る場合は、実機側の wheel TF が出ていない状態です。  
+現在の `robot2_rviz.launch.py` では、`wheel_tf_publisher` と `odom_tf_publisher` は既定で起動しません。  
+補助 TF を常時混ぜると、実機側 stamp と競合して `TF_OLD_DATA` や LaserScan の取りこぼしが出やすいためです。  
+まずは実機側の `/robot2/tf`, `/robot2/joint_states`, `/robot2/odom` を確認し、必要な場合だけ補助ノードを明示的に有効化します。
+
+`/robot2/scan` の `header.stamp.sec` が `date +%s` と大きくずれている場合は、実機時計が古いままです。  
+このときは RViz の `Fixed Frame` を `base_link` にしても表示が不安定になることがあるため、実機側で時刻同期をやり直します。
+
+補助ノードだけ確認するとき:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 run tb4_square wheel_tf_publisher --ros-args -r /tf:=/robot2/tf
+```
+
+LaserScan の timestamp が古いときの確認:
+
+```bash
+# 実機側
+turtlebot4-source
+date +%s
+ros2 topic echo /robot2/scan --once | sed -n '1,8p'
+```
+
+ここで `header.stamp.sec` が現在時刻系でなければ、実機側で時刻を直してから
+`turtlebot4-daemon-restart`、必要なら `sudo reboot` を行います。
+
+## 20. ノードや launch を止める
+
+`ros2 launch` や `ros2 run` を実行したターミナルで `Ctrl+C` を押します。
+
+## 21. Remote-SSH 関連でよく使うコマンド
+
+### PC側: 実機にログインする
+
+```bash
+ssh ubuntu@192.168.188.22
+```
+
+### PC側: X転送つきで接続する
+
+```bash
+ssh -X ubuntu@192.168.188.22
+```
+
+### PC側: 実機との接続確認をする
+
+```bash
+ping 192.168.188.22
+ssh ubuntu@192.168.188.22
+```
+
+## 22. GitHub への push が重いとき
+
+このワークスペースでは、`build/`、`install/`、`log/`、`.vscode/` のような自動生成ファイルは Git に入れないのが基本です。  
+すでに `.gitignore` は追加してあるので、次は「今 Git 管理に入ってしまっている生成物を外す」作業をします。
+
+### まず今後の生成物を無視する
+
+`.gitignore` に次のような設定を入れています。
+
+- `build/`
+- `install/`
+- `log/`
+- `.vscode/`
+- `__pycache__/`
+
+### すでに Git 管理に入っている生成物を index から外す
+
+以下のコマンドは、ローカルのファイル自体は消さずに、Git の管理対象からだけ外します。
+
+```bash
+cd ~/turtlebot4_ws
+git rm -r --cached .vscode build install log
+git add .gitignore
+git status
+git commit -m "Remove generated files from git tracking"
+```
+
+### そのあと push する
+
+```bash
+git push origin main
+```
+
+### それでも重い場合
+
+過去のコミット履歴に大きいファイルが残っている可能性があります。  
+特に `.vscode/browse.vc.db` のような大きいファイルが履歴にあると、push や clone が重いままです。
+
+この場合は `git filter-repo` などを使って履歴を書き換える必要があります。  
+ただしこれは影響が大きいので、実行前にバックアップや共同作業者への共有が必要です。
+
+履歴から巨大ファイルを消す例:
+
+```bash
+git filter-repo --path .vscode/browse.vc.db --invert-paths
+git push --force-with-lease origin main
+```
+
+注意:
+
+- 履歴を書き換えたあとの push は `git push --force-with-lease origin main` を使う
+- `git push --force-with-lease` でも共同作業中のリポジトリでは要注意
+- 履歴を書き換える前に `git clone --mirror` などでバックアップを取るのがおすすめ
+
+## 23. Humble で TurtleBot4 シミュレーションを試す
+
+実機に行く前に、まず `Gazebo` 上で `TurtleBot4` を動かすと確認しやすいです。  
+`Ubuntu 22.04 + ROS 2 Humble` 前提です。
+
+### まずシミュレータを入れる
+
+```bash
+# パッケージ一覧を最新にする
+sudo apt update
+# TurtleBot4 シミュレータ本体と Create3 関連ノードを入れる
+sudo apt install -y \
+  ros-humble-turtlebot4-simulator \
+  ros-humble-irobot-create-nodes
+```
+
+### まず素のシミュレーションを起動する
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# ワークスペースを読み込む
+source ~/turtlebot4_ws/install/setup.bash
+# Gazebo 上で TurtleBot4 シミュレーションを起動する
+ros2 launch tb4_square turtlebot4_sim.launch.py
+```
+
+起動したら `Gazebo` の `Play` ボタンを押して時間を進めます。
+
+### まず Gazebo と RViz でロボット表示を確認する
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# ワークスペースを読み込む
+source ~/turtlebot4_ws/install/setup.bash
+# まずは Gazebo と RViz だけを起動してロボット表示を確認する
+ros2 launch tb4_square turtlebot4_sim.launch.py \
+  rviz:=true localization:=false nav2:=false slam:=false
+```
+
+`turtlebot4_ignition_bringup/turtlebot4_ignition.launch.py` は `nav2` や `localization` や `map` をそのまま中へ渡さないので、まずはこのラッパー launch でロボット表示を確認します。
+
+`Gazebo` が黒画面のままなら、次でソフトウェア描画に切り替えて確認します。
+
+```bash
+cd ~/turtlebot4_ws
+source /opt/ros/humble/setup.bash
+source ~/turtlebot4_ws/install/setup.bash
+export LIBGL_ALWAYS_SOFTWARE=1
+ros2 launch tb4_square turtlebot4_sim.launch.py \
+  rviz:=true localization:=false nav2:=false slam:=false
+```
+
+### そのあと localization と Nav2 を有効にする
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# ワークスペースを読み込む
+source ~/turtlebot4_ws/install/setup.bash
+# ロボット表示が確認できてから localization と Nav2 を有効にする
+ros2 launch tb4_square turtlebot4_sim.launch.py \
+  nav2:=true slam:=false localization:=true rviz:=true
+```
+
+### 起動後に確認する
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# ゴール移動用 action が立ち上がっているか確認する
+ros2 action list | grep navigate_to_pose
+# tf 関連トピックが出ているか確認する
+ros2 topic list | grep tf
+# LiDAR の scan トピックが出ているか確認する
+ros2 topic list | grep scan
+```
+
+### CLI でゴールを送る
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# map 座標系で x=1.0, y=0.0 の位置へ移動するゴールを送る
+ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+'{
+  pose: {
+    header: {frame_id: "map"},
+    pose: {
+      position: {x: 1.0, y: 0.0, z: 0.0},
+      orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+    }
+  }
+}'
+```
+
+### 別の world や map を使いたいとき
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# ワークスペースを読み込む
+source ~/turtlebot4_ws/install/setup.bash
+# depot world と対応する map を指定して起動する
+ros2 launch tb4_square turtlebot4_sim.launch.py \
+  nav2:=true slam:=false localization:=true rviz:=true \
+  world:=depot \
+  map:=/opt/ros/humble/share/turtlebot4_navigation/maps/depot.yaml
+```
+
+## 24. Humble で Open-RMF を試す
+
+まずは `TurtleBot4` と直接つながなくてよいので、`RMF` のデモを単体で動かして全体像を確認します。
+
+### RMF 本体を入れる
+
+```bash
+# パッケージ一覧を最新にする
+sudo apt update
+# ビルドや依存解決で使う基本ツールを入れる
+sudo apt install -y ros-dev-tools
+# rosdep をまだ初期化していなければ初期化する
+sudo rosdep init
+# 依存解決用データベースを更新する
+rosdep update
+# colcon の標準 mixin 設定を登録する
+colcon mixin add default https://raw.githubusercontent.com/colcon/colcon-mixin-repository/master/index.yaml
+# colcon mixin を最新化する
+colcon mixin update default
+# Open-RMF の Humble 向け開発パッケージを入れる
+sudo apt install -y ros-humble-rmf-dev
+```
+
+### rmf_demos 用のワークスペースを作る
+
+```bash
+# RMF 用ワークスペースを作る
+mkdir -p ~/rmf_ws/src
+# ソース配置用ディレクトリへ移動する
+cd ~/rmf_ws/src
+# rmf_demos を Humble 向けバージョンで取得する
+git clone https://github.com/open-rmf/rmf_demos.git -b 2.0.3
+# ワークスペースのルートへ戻る
+cd ~/rmf_ws
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# 必要な依存パッケージをまとめて入れる
+rosdep install --from-paths src --ignore-src -r -y
+# rmf_demos をビルドする
+colcon build
+```
+
+### RMF デモを起動する
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# rmf_demos ワークスペースを読み込む
+source ~/rmf_ws/install/setup.bash
+# clinic world の RMF デモを起動する
+ros2 launch rmf_demos_gz clinic.launch.xml
+```
+
+### 別の world を試す
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# rmf_demos ワークスペースを読み込む
+source ~/rmf_ws/install/setup.bash
+# office world の RMF デモを起動する
+ros2 launch rmf_demos_gz office.launch.xml
+```
+
+### タスクを投げる
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# rmf_demos ワークスペースを読み込む
+source ~/rmf_ws/install/setup.bash
+# 巡回タスクを RMF に送る
+ros2 run rmf_demos_tasks dispatch_patrol \
+  -p L1_left_nurse_center L2_right_nurse_center \
+  -n 2 \
+  --use_sim_time
+```
+
+## 25. 進め方のおすすめ順
+
+### 1. TurtleBot4 シミュレータだけ確認する
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# ワークスペースを読み込む
+source ~/turtlebot4_ws/install/setup.bash
+# まずは Gazebo と RViz だけを起動してロボット表示を確認する
+ros2 launch tb4_square turtlebot4_sim.launch.py \
+  rviz:=true localization:=false nav2:=false slam:=false
+```
+
+### 2. 別ターミナルでゴールを送って動作確認する
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# map 座標系で x=1.0, y=0.0 の位置へ移動するゴールを送る
+ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
+'{
+  pose: {
+    header: {frame_id: "map"},
+    pose: {
+      position: {x: 1.0, y: 0.0, z: 0.0},
+      orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+    }
+  }
+}'
+```
+
+### 3. そのあと RMF デモを別ワークスペースで試す
+
+```bash
+# ROS 2 Humble の基本環境を読み込む
+source /opt/ros/humble/setup.bash
+# rmf_demos ワークスペースを読み込む
+source ~/rmf_ws/install/setup.bash
+# clinic world の RMF デモを起動する
+ros2 launch rmf_demos_gz clinic.launch.xml
+```
+
+### 4. 注意
+
+- `TurtleBot4` と `RMF` を別々に確認してから、最後に接続段階へ進むと詰まりにくい
+- `free_fleet` の現行 README は `Jazzy` 前提なので、最終的に `RMF` から `TurtleBot4` を直接つなぐ段階では別途確認が必要
+
+## 26. Docker で Jazzy 環境を分けて作る
+
+`Humble` のホスト環境はそのまま残して、`Docker` コンテナの中だけで `Jazzy` を使う流れです。
+
+### 1. Docker が動いているか確認する
+
+```bash
+# Docker のバージョンを確認する
+docker --version
+# テスト用コンテナが動くか確認する
+sudo docker run hello-world
+```
+
+### 2. 毎回 sudo を付けたくない場合
+
+```bash
+# 自分を docker グループに追加する
+sudo usermod -aG docker $USER
+```
+
+このあと一度ログアウトしてログインし直します。  
+ログインし直したあとは次で確認します。
+
+```bash
+# sudo なしで Docker が使えるか確認する
+docker --version
+docker run hello-world
+```
+
+### 3. Jazzy 用の作業フォルダを作る
+
+```bash
+# ホスト側に Jazzy 用ワークスペースを作る
+mkdir -p ~/jazzy_ff_ws/src
+# Git 管理を始める
+cd ~/jazzy_ff_ws
+git init
+```
+
+### 4. Jazzy イメージを取得する
+
+```bash
+# ROS 2 Jazzy の desktop イメージを取得する
+docker pull osrf/ros:jazzy-desktop
+```
+
+### 5. GUI を出せるようにする
+
+```bash
+# Docker コンテナからローカル画面へ GUI を表示できるようにする
+xhost +local:docker
+```
+
+### 6. Jazzy コンテナを起動する
+
+```bash
+# GUI とネットワークをホスト共有で使いながら Jazzy コンテナを起動する
+docker run -it --rm \
+  --name jazzy_ff \
+  --net=host \
+  -e DISPLAY=$DISPLAY \
+  -e QT_X11_NO_MITSHM=1 \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v ~/jazzy_ff_ws:/root/jazzy_ff_ws \
+  osrf/ros:jazzy-desktop
+```
+
+### 7. コンテナの中で Jazzy か確認する
+
+```bash
+# Jazzy の ROS 環境を読み込む
+source /opt/ros/jazzy/setup.bash
+# いまの ROS ディストリビューションを確認する
+printenv ROS_DISTRO
+# ros2 コマンドが使えるか確認する
+ros2 --help
+```
+
+`ROS_DISTRO` に `jazzy` と出れば OK です。
+
+### 8. コンテナの中で free_fleet 用の作業を始める
+
+```bash
+# Jazzy 用ワークスペースの src へ移動する
+cd /root/jazzy_ff_ws/src
+# free_fleet を取得する
+git clone https://github.com/open-rmf/free_fleet.git
+# ワークスペースのルートへ戻る
+cd /root/jazzy_ff_ws
+# Jazzy の ROS 環境を読み込む
+source /opt/ros/jazzy/setup.bash
+```
+
+### 8-1. Jazzy/free_fleet 側の変更を Git に保存する
+
+コンテナ内で編集したファイルは、`~/jazzy_ff_ws` をマウントしていればホスト側の Git にそのまま反映されます。
+
+```bash
+cd ~/jazzy_ff_ws
+git status
+git add .
+git commit -m "Update Jazzy free_fleet workspace"
+git push
+```
+
+### 9. 使い分け
+
+- `Humble` の TurtleBot4 シミュレーションはホスト側ターミナルで動かす
+- `Jazzy` の `free_fleet` や関連確認は Docker コンテナ内ターミナルで動かす
+- 同じターミナルで `Humble` と `Jazzy` を混ぜて `source` しない
+- `VSCode` も `Humble` 用と `Jazzy` 用で別ウィンドウに分ける
+
+## 27. PC側: robot2 の新しい地図を作る
+
+```bash
+cd ~/turtlebot4_ws
+./scripts/robot2_slam.sh
+```
+
+別端末でキーボード操作する:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard \
+  --ros-args -r cmd_vel:=/robot2/cmd_vel
+```
+
+注意:
+
+- `SLAM` 中は `localization` と `Nav2` を同時に起動しない
+- 起動直後に `Message Filter dropping message ... queue is full` が数秒出るのは珍しくない
+
+## 28. PC側: 作った地図を保存する
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+mkdir -p ~/maps
+ros2 run nav2_map_server map_saver_cli \
+  -f ~/maps/robot2_map \
+  --ros-args -r map:=/robot2/map
+```
+
+## 29. PC側: 保存した地図で localization を起動する
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 launch tb4_square robot2_localization_compat.launch.py \
+  map:=$HOME/maps/robot2_map.yaml
+```
+
+## 30. PC側: localization / Nav2 用 RViz
+
+`SLAM` 用と違って、`localization` / `Nav2` 段階では `tf_topic:=/robot2/tf_nav` を使う。
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 launch tb4_square robot2_rviz.launch.py \
+  rviz_config:=$(ros2 pkg prefix tb4_square --share)/rviz/robot2_slam.rviz \
+  use_sim_time:=false \
+  tf_topic:=/robot2/tf_nav
+```
+
+## 31. PC側: initial pose を入れる
+
+基本は `RViz` の `2D Pose Estimate` を使う。
+
+- `Fixed Frame` を `map` にする
+- 地図上の実機位置をクリックする
+- ドラッグで実機の向きを合わせる
+
+CLI で入れるとき:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+timeout 3 ros2 topic pub /robot2/initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+"{header: {frame_id: map}, pose: {pose: {position: {x: 0.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.068]}}" \
+--rate 5 \
+--qos-reliability best_effort
+```
+
+## 32. PC側: Nav2 を起動する
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 launch tb4_square robot2_nav2_compat.launch.py
+```
+
+確認:
+
+```bash
+source ~/turtlebot4_ws/scripts/robot2_env.bash
+ros2 action list | grep /robot2/navigate_to_pose
+```
+
+## 33. PC側: direct goal で動作確認する
+
+RViz の `2D Goal Pose` でもよいし、CLI なら次:
+
+```bash
+cd ~/turtlebot4_ws
+source scripts/robot2_env.bash
+ros2 action send_goal /robot2/navigate_to_pose nav2_msgs/action/NavigateToPose \
+"{pose: {header: {frame_id: map}, pose: {position: {x: 1.0, y: 0.5, z: 0.0}, orientation: {w: 1.0}}}}"
+```
+
+## 34. RMF へ渡す前の最低確認
+
+```bash
+source ~/turtlebot4_ws/scripts/robot2_env.bash
+timeout 5 ros2 topic echo /robot2/amcl_pose --once
+timeout 5 ros2 topic echo /robot2/map --once
+ros2 action list | grep /robot2/navigate_to_pose
+```
+
+ここまで通ったら、`~/fleet_adapter_template_tb4_ws` の
+`scripts/run_direct_schedule.sh`、
+`scripts/run_direct_adapter.sh`、
+`scripts/run_direct_dispatch_go_to_place.sh`
+で RMF から実機を動かす段階に入れる。

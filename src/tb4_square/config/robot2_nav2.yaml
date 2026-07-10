@@ -1,0 +1,374 @@
+bt_navigator:
+  ros__parameters:
+    use_sim_time: True
+    # Nav2 全体が参照する地図座標系。
+    global_frame: map
+    # ロボット本体の基準フレーム。
+    robot_base_frame: base_link
+    # オドメトリ入力 topic。
+    odom_topic: odom
+    # Behavior Tree を評価する周期 [ms]。
+    bt_loop_duration: 10
+    # 各 action / service の応答待ち時間 [s]。
+    default_server_timeout: 20
+    # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
+    # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
+    # nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml
+    # They can be set here or via a RewrittenYaml remap from a parent launch file to Nav2.
+    plugin_lib_names:
+    - nav2_compute_path_to_pose_action_bt_node
+    - nav2_compute_path_through_poses_action_bt_node
+    - nav2_smooth_path_action_bt_node
+    - nav2_follow_path_action_bt_node
+    - nav2_spin_action_bt_node
+    - nav2_wait_action_bt_node
+    - nav2_assisted_teleop_action_bt_node
+    - nav2_back_up_action_bt_node
+    - nav2_drive_on_heading_bt_node
+    - nav2_clear_costmap_service_bt_node
+    - nav2_is_stuck_condition_bt_node
+    - nav2_goal_reached_condition_bt_node
+    - nav2_goal_updated_condition_bt_node
+    - nav2_globally_updated_goal_condition_bt_node
+    - nav2_is_path_valid_condition_bt_node
+    - nav2_initial_pose_received_condition_bt_node
+    - nav2_reinitialize_global_localization_service_bt_node
+    - nav2_rate_controller_bt_node
+    - nav2_distance_controller_bt_node
+    - nav2_speed_controller_bt_node
+    - nav2_truncate_path_action_bt_node
+    - nav2_truncate_path_local_action_bt_node
+    - nav2_goal_updater_node_bt_node
+    - nav2_recovery_node_bt_node
+    - nav2_pipeline_sequence_bt_node
+    - nav2_round_robin_node_bt_node
+    - nav2_transform_available_condition_bt_node
+    - nav2_time_expired_condition_bt_node
+    - nav2_path_expiring_timer_condition
+    - nav2_distance_traveled_condition_bt_node
+    - nav2_single_trigger_bt_node
+    - nav2_goal_updated_controller_bt_node
+    - nav2_is_battery_low_condition_bt_node
+    - nav2_navigate_through_poses_action_bt_node
+    - nav2_navigate_to_pose_action_bt_node
+    - nav2_remove_passed_goals_action_bt_node
+    - nav2_planner_selector_bt_node
+    - nav2_controller_selector_bt_node
+    - nav2_goal_checker_selector_bt_node
+    - nav2_controller_cancel_bt_node
+    - nav2_path_longer_on_approach_bt_node
+    - nav2_wait_cancel_bt_node
+    - nav2_spin_cancel_bt_node
+    - nav2_back_up_cancel_bt_node
+    - nav2_assisted_teleop_cancel_bt_node
+    - nav2_drive_on_heading_cancel_bt_node
+
+bt_navigator_navigate_through_poses_rclcpp_node:
+  ros__parameters:
+    use_sim_time: True
+
+bt_navigator_navigate_to_pose_rclcpp_node:
+  ros__parameters:
+    use_sim_time: True
+
+controller_server:
+  ros__parameters:
+    use_sim_time: True
+    # ローカル制御器の更新周波数 [Hz]。
+    controller_frequency: 20.0
+    # これ未満の速度は 0 とみなして扱う。
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.5
+    min_theta_velocity_threshold: 0.001
+    # 一時的に制御が乱れてもどこまで失敗扱いにしないか。
+    failure_tolerance: 0.3
+    progress_checker_plugin: "progress_checker"
+    goal_checker_plugins: ["general_goal_checker"] # "precise_goal_checker"
+    controller_plugins: ["FollowPath"]
+
+    # 「ちゃんと前進できているか」を監視する設定。
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      # この距離だけ動けない状態が続くと停滞とみなす。
+      required_movement_radius: 0.5
+      # required_movement_radius を満たすまでの猶予時間 [s]。
+      movement_time_allowance: 10.0
+    # ゴール到達判定の設定。
+    #precise_goal_checker:
+    #  plugin: "nav2_controller::SimpleGoalChecker"
+    #  xy_goal_tolerance: 0.25
+    #  yaw_goal_tolerance: 0.25
+    #  stateful: True
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      # 位置ずれをどこまで許容するか [m]。
+      xy_goal_tolerance: 0.25
+      # 向きずれをどこまで許容するか [rad]。
+      yaw_goal_tolerance: 0.25
+    # DWB ローカルプランナの設定。
+    # 狭い場所での挙動、回り込み方、障害物回避の強さはここが効く。
+    FollowPath:
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: True
+      # 直進速度の下限 / 上限 [m/s]。
+      min_vel_x: 0.0
+      min_vel_y: 0.0
+      max_vel_x: 0.26
+      max_vel_y: 0.0
+      # 角速度の上限 [rad/s]。
+      max_vel_theta: 1.0
+      min_speed_xy: 0.0
+      max_speed_xy: 0.26
+      min_speed_theta: 0.0
+      # Add high threshold velocity for turtlebot 3 issue.
+      # https://github.com/ROBOTIS-GIT/turtlebot3_simulations/issues/75
+      # 加減速の上限。大きいほど機敏だが、急な動きになりやすい。
+      acc_lim_x: 2.5
+      acc_lim_y: 0.0
+      acc_lim_theta: 3.2
+      decel_lim_x: -2.5
+      decel_lim_y: 0.0
+      decel_lim_theta: -3.2
+      # 候補軌道を何通り試すか。増やすと丁寧だが重くなる。
+      vx_samples: 20
+      vy_samples: 5
+      vtheta_samples: 20
+      # 何秒先まで仮想軌道を見て評価するか。
+      sim_time: 1.7
+      # 軌道評価の刻み幅。小さいほど細かいが計算量が増える。
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+      # TF の多少の遅れをどこまで許容するか。
+      transform_tolerance: 0.2
+      # DWB 側でもゴール許容値を持つ。
+      xy_goal_tolerance: 0.25
+      trans_stopped_velocity: 0.25
+      short_circuit_trajectory_evaluation: True
+      stateful: True
+      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      # 障害物に近い軌道をどれだけ強く嫌うか。
+      BaseObstacle.scale: 0.02
+      # 経路そのものへの追従をどれだけ重視するか。
+      PathAlign.scale: 32.0
+      PathAlign.forward_point_distance: 0.1
+      # ゴール向きへ合わせることをどれだけ重視するか。
+      GoalAlign.scale: 24.0
+      GoalAlign.forward_point_distance: 0.1
+      # 経路から外れないことをどれだけ重視するか。
+      PathDist.scale: 32.0
+      # ゴール位置へ寄ることをどれだけ重視するか。
+      GoalDist.scale: 24.0
+      # その場回転で姿勢を合わせる動作の重み。
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      # 近傍障害物の地図。実機の回避挙動に直結する。
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      use_sim_time: True
+      # ロボット中心に追従する小さい地図を使う。
+      rolling_window: true
+      # local costmap の横幅 / 縦幅 [m]。
+      width: 3
+      height: 3
+      # 1セルの大きさ [m]。小さいほど細かいが重い。
+      resolution: 0.06
+      # まずは実機の外形に近い値を維持する。
+      # ここを小さくしすぎると、棚や壁に実機が擦りやすくなる。
+      robot_radius: 0.175
+      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # 障害物から離れようとする強さ。
+        # 値を大きくすると障害物の近くで急にコストが上がりやすい。
+        # まずは inflation_radius を調整し、それでも詰まるときにここを見直す。
+        cost_scaling_factor: 3.0
+        # 障害物まわりに確保する安全マージン。
+        # 既定値 0.45 だと広めなので、まず 0.20 に下げて狭い場所を通りやすくする。
+        # まだ避けすぎるなら少し下げ、逆に近づきすぎるなら 0.30 や 0.35 へ戻す。
+        inflation_radius: 0.20
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: True
+        publish_voxel_map: True
+        # 3D 障害物レイヤの高さ方向の設定。
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        observation_sources: scan
+        scan:
+          topic: scan
+          max_obstacle_height: 2.0
+          # clearing=True で「障害物が消えた」ことも反映する。
+          clearing: True
+          # marking=True で観測した障害物を地図へ追加する。
+          marking: True
+          data_type: "LaserScan"
+          # free space を伸ばして消し込む距離。
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          # 障害物として登録する距離範囲。
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        # 名前空間付き環境で map topic 解決が揺れないように絶対名で固定する。
+        map_topic: /robot2/map
+        map_subscribe_transient_local: True
+      always_send_full_costmap: True
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      # 大域経路用の地図。どの通路を使うかの判断に効く。
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      use_sim_time: True
+      # まずは実機の物理サイズを表す値はそのままにする。
+      # 安全距離は inflation_radius 側で調整し、ここは最後に触る。
+      robot_radius: 0.175
+      # map 受信前の暫定 geometry。loaded map が届けば static layer 側で上書きされる。
+      # Nav2 Humble では width / height が整数パラメータとして宣言されるため、
+      # ここでは実地図を含む少し大きめの整数値にしておく。
+      resolution: 0.05
+      width: 5
+      height: 4
+      origin_x: -4.4
+      origin_y: 0.385
+      # 未観測領域を unknown として扱う。
+      track_unknown_space: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          # 障害物を消し込む距離。
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          # 障害物として扱う距離。
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        # 名前空間付き環境で map topic 解決が揺れないように絶対名で固定する。
+        map_topic: /robot2/map
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        # グローバル経路で障害物から離れようとする強さ。
+        # local_costmap と同じ意味で、まずは両者を同じ値でそろえておくと追いやすい。
+        cost_scaling_factor: 3.0
+        # 静的障害物まわりの安全マージン。
+        # local_costmap と同じ 0.20 にそろえ、挙動差を減らしている。
+        inflation_radius: 0.20
+      always_send_full_costmap: True
+
+planner_server:
+  ros__parameters:
+    # グローバルプランナが再計画を試みる目安周波数 [Hz]。
+    expected_planner_frequency: 20.0
+    use_sim_time: True
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      # ゴール点が少し塞がっていても、この距離内なら近傍点を探す。
+      tolerance: 0.5
+      # false なら Dijkstra 系、true なら A* 系。
+      use_astar: false
+      # unknown 領域への経路生成を許すか。
+      allow_unknown: true
+
+smoother_server:
+  ros__parameters:
+    use_sim_time: True
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      # 経路平滑化の収束条件と反復回数。
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: True
+
+behavior_server:
+  ros__parameters:
+    # recovery behavior 用の入力 topic。
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors/Spin"
+    backup:
+      plugin: "nav2_behaviors/BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors/Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors/AssistedTeleop"
+    global_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    use_sim_time: true
+    # recovery 動作の評価をどれだけ先まで見るか。
+    simulate_ahead_time: 2.0
+    # その場回転系 recovery の角速度制限。
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+
+robot_state_publisher:
+  ros__parameters:
+    use_sim_time: True
+
+waypoint_follower:
+  ros__parameters:
+    use_sim_time: True
+    # waypoint 列をたどる周期 [Hz]。
+    loop_rate: 20
+    # 1点失敗で全体停止するか。
+    stop_on_failure: false
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      # waypoint ごとの停止時間 [ms]。
+      waypoint_pause_duration: 200
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: True
+    # cmd_vel をなめらかにする周期 [Hz]。
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    # OPEN_LOOP はオドメトリ追従より指令値ベースで平滑化する。
+    feedback: "OPEN_LOOP"
+    # 並進 / 横移動 / 角速度の上限下限。
+    max_velocity: [0.26, 0.0, 1.0]
+    min_velocity: [-0.26, 0.0, -1.0]
+    # 加減速制限。急発進や急停止を抑える。
+    max_accel: [2.5, 0.0, 3.2]
+    max_decel: [-2.5, 0.0, -3.2]
+    odom_topic: "odom"
+    odom_duration: 0.1
+    # この速度以下は 0 とみなすデッドバンド。
+    deadband_velocity: [0.0, 0.0, 0.0]
+    # 新しい速度指令が来ないときに停止へ向かうまでの時間 [s]。
+    velocity_timeout: 1.0

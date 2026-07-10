@@ -1,0 +1,48 @@
+"""tb4_square パッケージのインストール設定と実行入口定義。"""
+
+from setuptools import setup
+from glob import glob
+
+package_name = "tb4_square"
+
+setup(
+    name=package_name,
+    version="0.0.1",
+    packages=[package_name],
+    data_files=[
+        # colcon build 後に launch / RViz / GUI 設定を share 以下へ入れる。
+        # 追加した設定ファイルを配布対象にしたいときは、この一覧へ足す。
+        ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
+        ("share/" + package_name, ["package.xml"]),
+        ("share/" + package_name + "/behavior_trees", glob("behavior_trees/*.xml")),
+        ("share/" + package_name + "/config", glob("config/*.yaml")),
+        ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
+        ("share/" + package_name + "/gui", glob("gui/*.config")),
+        ("share/" + package_name + "/rviz", glob("rviz/*.rviz")),
+    ],
+    install_requires=["setuptools"],
+    zip_safe=True,
+    maintainer="masu_ubu",
+    maintainer_email="masu_ubu@example.com",
+    description="Simple square motion demo for TurtleBot 4.",
+    license="Apache-2.0",
+    tests_require=["pytest"],
+    entry_points={
+        # ここで定義した名前が ros2 run で呼べる executable 名になる。
+        # 新しい Python ノードを追加したら、この一覧に追記するのが基本。
+        "console_scripts": [
+            "lifecycle_bringup_retry = tb4_square.lifecycle_bringup_retry:main",
+            "odom_tf_publisher = tb4_square.odom_tf_publisher:main",
+            "odom_path_publisher = tb4_square.odom_path_publisher:main",
+            "ros_tf_to_zenoh = tb4_square.ros_tf_to_zenoh:main",
+            "ros_topics_to_zenoh = tb4_square.ros_topics_to_zenoh:main",
+            "square_driver = tb4_square.square_driver:main",
+            "laser_scan_frame_prefix_republisher = tb4_square.laser_scan_frame_prefix_republisher:main",
+            "tf_filter_republisher = tb4_square.tf_filter_republisher:main",
+            "tf_frame_prefix_republisher = tb4_square.tf_frame_prefix_republisher:main",
+            "tf_stable_republisher = tb4_square.tf_stable_republisher:main",
+            "tf_topic_relay = tb4_square.tf_topic_relay:main",
+            "wheel_tf_publisher = tb4_square.wheel_tf_publisher:main",
+        ],
+    },
+)

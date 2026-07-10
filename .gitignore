@@ -1,0 +1,126 @@
+# =========================
+# ROS 2 / colcon
+# =========================
+build/
+install/
+install_*/
+log/
+
+# Colcon markers
+COLCON_IGNORE
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+rlenv/
+
+# Python packaging
+*.egg-info/
+dist/
+.eggs/
+
+# =========================
+# VS Code / IDE
+# =========================
+.vscode/
+.idea/
+*.code-workspace
+
+# IntelliSense databases
+browse.vc.db
+*.VC.db
+*.opendb
+*.sdf
+
+# =========================
+# ROS runtime / rosbag
+# =========================
+*.bag
+*.db3
+*.mcap
+rosbag2_*/
+
+# =========================
+# Gazebo / Ignition / ROS logs
+# =========================
+.gazebo/
+.ignition/
+.gz/
+.ros/
+.rviz2/
+
+# =========================
+# RMF Web / Node.js
+# =========================
+node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log
+
+# Frontend build outputs
+dist/
+coverage/
+.next/
+.cache/
+
+# =========================
+# Temporary/generated files
+# =========================
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+tmp/
+temp/
+
+# Generated TF frame graphs
+frames_*.gv
+frames_*.pdf
+
+# Generated profiling files
+*.prof
+*.lprof
+profile_summary.txt
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Secrets / local settings
+# =========================
+.env
+.env.*
+!.env.example
+
+# SSH keys / certificates
+*.pem
+*.key
+*.crt
+
+# =========================
+# Large generated databases
+# =========================
+*.sqlite
+*.sqlite3
+*.db
