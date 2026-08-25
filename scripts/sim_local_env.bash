@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
+export RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}"
+
+unset ROS_DISCOVERY_SERVER
+unset ROS_STATIC_PEERS
+unset FASTRTPS_DEFAULT_PROFILES_FILE

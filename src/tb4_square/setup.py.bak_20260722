@@ -1,21 +1,9 @@
 """tb4_square パッケージのインストール設定と実行入口定義。"""
 import os
-from collections.abc import Sequence
 from setuptools import setup
 from glob import glob
 
 package_name = "tb4_square"
-
-model_data_files: list[tuple[str, Sequence[str]]] = []
-
-for root, _, files in os.walk("models"):
-    if files:
-        install_dir = os.path.join("share", package_name, root)
-        source_files = [
-            os.path.join(root, filename)
-            for filename in files
-        ]
-        model_data_files.append((install_dir, source_files))
 
 setup(
     name=package_name,
@@ -32,9 +20,7 @@ setup(
         ("share/" + package_name + "/gui", glob("gui/*.config")),
         ("share/" + package_name + "/rviz", glob("rviz/*.rviz")),
         (os.path.join("share", package_name, "worlds"), glob("worlds/*")),
-        (os.path.join("share", package_name, "maps"), glob("maps/*")),
-    ] + model_data_files,
-
+    ],
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="masu_ubu",
