@@ -29,6 +29,8 @@ setup(
         ("share/" + package_name + "/behavior_trees", glob("behavior_trees/*.xml")),
         ("share/" + package_name + "/config", glob("config/*.yaml")),
         ("share/" + package_name + "/launch", glob("launch/*.launch.py")),
+        ("share/" + package_name + "/urdf", glob("urdf/*.xacro")),
+        ("share/" + package_name + "/urdf/standard", glob("urdf/standard/*.xacro")),
         ("share/" + package_name + "/gui", glob("gui/*.config")),
         ("share/" + package_name + "/rviz", glob("rviz/*.rviz")),
         (os.path.join("share", package_name, "worlds"), glob("worlds/*")),
