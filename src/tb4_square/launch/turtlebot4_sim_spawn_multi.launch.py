@@ -61,8 +61,9 @@ def generate_launch_description():
     pkg_irobot_create_ignition_bringup = get_package_share_directory(
         "irobot_create_ignition_bringup"
     )
-    turtlebot4_ros_ign_bridge_launch = PathJoinSubstitution(
-        [pkg_turtlebot4_ignition_bringup, "launch", "ros_ign_bridge.launch.py"]
+    pkg_tb4_square = get_package_share_directory("tb4_square")
+    robot5_nav_bridge_launch = PathJoinSubstitution(
+        [pkg_tb4_square, "launch", "robot5_nav_bridge.launch.py"]
     )
     turtlebot4_node_launch = PathJoinSubstitution(
         [pkg_turtlebot4_ignition_bringup, "launch", "turtlebot4_nodes.launch.py"]
@@ -73,8 +74,6 @@ def generate_launch_description():
     create3_ignition_nodes_launch = PathJoinSubstitution(
         [pkg_irobot_create_ignition_bringup, "launch", "create3_ignition_nodes.launch.py"]
     )
-    pkg_tb4_square = get_package_share_directory("tb4_square")
-
     robot_description_launch = PathJoinSubstitution(
     [pkg_tb4_square, "launch", "robot_description_multi.launch.py"]
     )
@@ -166,11 +165,12 @@ def generate_launch_description():
                 ],
                 output="screen",
             ),
-            # LiDAR や camera など、シミュレータの topic を ROS 2 topic へ橋渡しする。
-            # センサ topic 名を変えたいときは、この include 先の bridge launch が主な編集点。
+            # Robot5 は localization/Nav2 に必要な bridge だけを起動する。
+            # camera/cliff/IR/HMI は second Nav2 graph の DDS 負荷を増やすため省く。
             IncludeLaunchDescription(
-                PythonLaunchDescriptionSource([turtlebot4_ros_ign_bridge_launch]),
+                PythonLaunchDescriptionSource([robot5_nav_bridge_launch]),
                 launch_arguments=[
+                    ("use_sim_time", use_sim_time),
                     ("model", LaunchConfiguration("model")),
                     ("robot_name", robot_name),
                     ("dock_name", dock_name),
