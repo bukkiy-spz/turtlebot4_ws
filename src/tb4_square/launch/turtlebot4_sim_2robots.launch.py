@@ -144,8 +144,11 @@ def generate_launch_description():
             actions=[robot2_spawn],
         ),
 
+        # create3 control.py の diffdrive spawner は joint-state spawner 終了時に
+        # namespace を遅延評価する。Robot2 の評価完了前に Robot5 include を
+        # 開始すると namespace=robot5 で二重起動されるため直列化する。
         TimerAction(
-            period=6.0,
+            period=30.0,
             actions=[robot5_spawn],
         ),
     ])

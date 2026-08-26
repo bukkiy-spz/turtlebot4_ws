@@ -30,7 +30,7 @@ def generate_launch_description() -> LaunchDescription:
             # rviz_config を差し替えると、表示するトピックや見た目の初期設定を切り替えられる。
             DeclareLaunchArgument("rviz_config", default_value=default_rviz_config),
             DeclareLaunchArgument("model", default_value="standard"),
-            DeclareLaunchArgument("tf_topic", default_value="tf"),
+            DeclareLaunchArgument("tf_topic", default_value="tf_nav"),
             DeclareLaunchArgument("tf_static_topic", default_value="tf_static"),
             # simulation を見るときは true のまま使う。
             # false にすると /clock ではなく PC の時計で動くため、TF や LaserScan が

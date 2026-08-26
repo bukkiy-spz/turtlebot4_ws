@@ -59,24 +59,6 @@ def launch_setup(context, *args, **kwargs):
                 ],
             ),
             Node(
-                package="tb4_square",
-                executable="odom_tf_publisher",
-                name="odom_tf_publisher",
-                output="screen",
-                parameters=[
-                    {"use_sim_time": use_sim_time},
-                    {
-                        "odom_topic": namespace_str + "/odom",
-                        "parent_frame": "odom",
-                        "child_frame": "base_link",
-                        "publish_rate": 20.0,
-                        "stale_after_sec": 1.0,
-                        "use_msg_stamp": True,
-                    },
-                ],
-                remappings=[("/tf", namespace_str + "/tf_nav")],
-            ),
-            Node(
                 package="nav2_map_server",
                 executable="map_server",
                 name="map_server",
