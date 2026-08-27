@@ -26,6 +26,10 @@ def launch_setup(context, *args, **kwargs):
     log_level = LaunchConfiguration("log_level")
     pkg_tb4_square = get_package_share_directory("tb4_square")
 
+    namespace_str = namespace.perform(context)
+    if namespace_str and not namespace_str.startswith("/"):
+        namespace_str = "/" + namespace_str
+
     lifecycle_nodes = [
         "controller_server",
         "planner_server",
@@ -47,6 +51,9 @@ def launch_setup(context, *args, **kwargs):
             param_rewrites={
                 "use_sim_time": use_sim_time,
                 "autostart": autostart,
+                # StaticLayer が各 robot 固有の map を購読するよう、
+                # local/global costmap の map_topic を同時に書き換える。
+                "map_topic": namespace_str + "/map",
                 "default_nav_to_pose_bt_xml": PathJoinSubstitution(
                     [pkg_tb4_square, "behavior_trees", "navigate_to_pose_no_recovery.xml"]
                 ),
@@ -62,10 +69,6 @@ def launch_setup(context, *args, **kwargs):
         ),
         allow_substs=True,
     )
-
-    namespace_str = namespace.perform(context)
-    if namespace_str and not namespace_str.startswith("/"):
-        namespace_str = "/" + namespace_str
 
     nav_nodes = GroupAction(
         actions=[
